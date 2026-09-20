@@ -1,0 +1,1 @@
+import Navbar from '../../components/Navbar';import EbookShowcase from '../../components/EbookShowcase';export default function Page(){return <main className="min-h-screen bg-black text-white"><Navbar/><div className="pt-20"><EbookShowcase/></div></main>}

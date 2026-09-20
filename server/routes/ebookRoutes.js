@@ -1,0 +1,1 @@
+const express=require('express');const {getEbooks,getEbookById}=require('../controllers/ebookController');const r=express.Router();r.get('/',getEbooks);r.get('/:id',getEbookById);module.exports=r;

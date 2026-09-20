@@ -1,0 +1,5 @@
+const supabase=require('../config/supabase');
+async function requireUser(req,res,next){try{const h=req.headers.authorization||'';const token=h.startsWith('Bearer ')?h.slice(7):null;if(!token)return res.status(401).json({success:false,message:'Authentication required'});const {data,error}=await supabase.auth.getUser(token);if(error||!data.user)return res.status(401).json({success:false,message:'Invalid session'});req.user=data.user;next();}catch(e){next(e);}}
+async function optionalUser(req,res,next){try{const h=req.headers.authorization||'';const token=h.startsWith('Bearer ')?h.slice(7):null;if(token){const {data,error}=await supabase.auth.getUser(token);if(error||!data.user)return res.status(401).json({success:false,message:'Invalid session'});req.user=data.user;}next();}catch(e){next(e);}}
+async function requireAdmin(req,res,next){try{const {data,error}=await supabase.from('profiles').select('role').eq('id',req.user.id).single();if(error||data?.role!=='admin')return res.status(403).json({success:false,message:'Admin access required'});next();}catch(e){next(e);}}
+module.exports={requireUser,optionalUser,requireAdmin};
