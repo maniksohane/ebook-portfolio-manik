@@ -1,1 +1,18 @@
-{"name":"developer-portfolio-supabase","private":true,"scripts":{"dev":"concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"","server":"npm --prefix server run dev","client":"npm --prefix client run dev"},"devDependencies":{"concurrently":"^9.0.0"}}
+{
+  "name": "developer-portfolio-supabase",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "server": "npm --prefix server run dev",
+    "client": "npm --prefix client run dev",
+    "sync:check": "node scripts/git-auto-sync.cjs --check",
+    "sync:once": "node scripts/git-auto-sync.cjs --once",
+    "sync:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/git-auto-sync.ps1 -Action Start",
+    "sync:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/git-auto-sync.ps1 -Action Stop",
+    "sync:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/git-auto-sync.ps1 -Action Status",
+    "sync:enable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/git-auto-sync.ps1 -Action Install",
+    "sync:disable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/git-auto-sync.ps1 -Action Uninstall",
+    "test:sync": "node --test scripts/git-auto-sync.test.cjs"
+  },
+  "devDependencies": { "concurrently": "^9.0.0" }
+}

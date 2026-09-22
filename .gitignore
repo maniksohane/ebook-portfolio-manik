@@ -4,3 +4,22 @@ node_modules/
 .env.*
 !.env.example
 *.log
+
+# Local reports, generated assets, and development artefacts
+/audit-*.txt
+/important-files.txt
+/project-files.txt
+/npm.cmd
+tmp/
+output/
+coverage/
+.DS_Store
+Thumbs.db
+
+# Credentials and paid ebook files must never be published with the source
+*.pem
+*.key
+*.p12
+*.pfx
+*.pdf
+*.epub
