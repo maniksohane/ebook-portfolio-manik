@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { createRazorpayOrder } from "../lib/api";
 import { checkoutAction, verifyPaymentDetails } from "../lib/paymentVerification.mjs";
+import { buildRazorpayCheckoutOptions, getRazorpayMode } from "../lib/razorpayCheckoutOptions.mjs";
 
 const RAZORPAY_SCRIPT =
   "https://checkout.razorpay.com/v1/checkout.js";
@@ -31,6 +32,9 @@ export default function RazorpayCheckout({ ebook }) {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [paymentPreference, setPaymentPreference] = useState("upi");
+  const [paymentMode, setPaymentMode] = useState(() => getRazorpayMode(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID));
+  const supportsUpi = (ebook.currency || "INR") === "INR";
 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -147,59 +151,12 @@ export default function RazorpayCheckout({ ebook }) {
       }
 
       const options = {
-        key: response.keyId,
-
-        amount: response.amount,
-
-        currency: response.currency,
-
-        name: "Manikya Publishing",
-
-        description: ebook.title,
-
-        order_id: response.orderId,
-
-        prefill: {
-          name: `${trimmedFirstName} ${trimmedLastName}`,
-          email: trimmedEmail,
-          contact: trimmedPhone,
-        },
-
-        /*
-         * UPI configuration
-         *
-         * This places UPI first and enables the
-         * supported UPI flows including QR.
-         */
-        config: {
-          display: {
-            blocks: {
-              upi: {
-                name: "Pay using UPI",
-                instruments: [
-                  {
-                    method: "upi",
-                    flows: [
-                      "qr",
-                      "intent",
-                    ],
-                  },
-                ],
-              },
-            },
-
-            sequence: [
-              "block.upi",
-              "card",
-              "netbanking",
-              "wallet",
-            ],
-
-            preferences: {
-              show_default_blocks: false,
-            },
-          },
-        },
+        ...buildRazorpayCheckoutOptions({
+          order: response,
+          title: ebook.title,
+          buyer: { firstName: trimmedFirstName, lastName: trimmedLastName, email: trimmedEmail, phone: trimmedPhone },
+          preference: paymentPreference,
+        }),
 
         handler: async function (paymentResponse) {
           const details = {
@@ -223,10 +180,8 @@ export default function RazorpayCheckout({ ebook }) {
           },
         },
 
-        theme: {
-          color: "#2563eb",
-        },
       };
+      setPaymentMode(getRazorpayMode(response.keyId));
 
       const razorpay =
         new window.Razorpay(options);
@@ -378,6 +333,33 @@ export default function RazorpayCheckout({ ebook }) {
                     link will be sent to this email.
                   </p>
                 </div>
+
+                {supportsUpi && !paymentDetails && !download && (
+                  <fieldset disabled={busy} aria-describedby={`payment-help-${ebook.id}`} className="mt-5 min-w-0">
+                    <legend className="mb-2 text-sm font-medium text-white/80">Payment method</legend>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${paymentPreference === "upi" ? "border-blue-400/60 bg-blue-400/10" : "border-white/10 bg-white/[0.03]"}`}>
+                        <input type="radio" name={`payment-method-${ebook.id}`} value="upi" checked={paymentPreference === "upi"} onChange={() => setPaymentPreference("upi")} className="mt-1 accent-blue-500" />
+                        <span>
+                          <span className="block text-sm font-medium text-white">{paymentMode === "test" ? "UPI (test)" : "UPI / QR code"}</span>
+                          <span className="mt-1 block text-xs leading-5 text-white/50">{paymentMode === "test" ? "Simulated UPI payment" : "UPI apps or scan in Razorpay"}</span>
+                        </span>
+                      </label>
+                      <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${paymentPreference === "other" ? "border-blue-400/60 bg-blue-400/10" : "border-white/10 bg-white/[0.03]"}`}>
+                        <input type="radio" name={`payment-method-${ebook.id}`} value="other" checked={paymentPreference === "other"} onChange={() => setPaymentPreference("other")} className="mt-1 accent-blue-500" />
+                        <span>
+                          <span className="block text-sm font-medium text-white">Card / Netbanking</span>
+                          <span className="mt-1 block text-xs leading-5 text-white/50">Other available methods</span>
+                        </span>
+                      </label>
+                    </div>
+                    <p id={`payment-help-${ebook.id}`} className="mt-2 text-xs leading-5 text-white/50">
+                      {paymentMode === "test"
+                        ? "Test mode: no money is charged. Real QR scanning and UPI app payments require live mode. Use success@razorpay or failure@razorpay if Razorpay offers a test UPI ID field; otherwise use a test card or netbanking."
+                        : "Razorpay shows supported UPI apps on mobile and a QR code on desktop. Availability depends on the device and enabled account methods."}
+                    </p>
+                  </fieldset>
+                )}
 
                 </fieldset>
 

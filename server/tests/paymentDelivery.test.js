@@ -96,6 +96,15 @@ test("email rejection preserves the paid download and records the failure", asyn
   assert.doesNotMatch(result.body.emailMessage, /domain|App Password|SMTP/);
 });
 
+test("captured UPI payments receive the same verified download and receipt", async () => {
+  const api = setup({ payment: { method: "upi" } });
+  const result = await api.verify();
+  assert.equal(result.status, 200);
+  assert.equal(result.body.emailSent, true);
+  assert.ok(result.body.download.url);
+  assert.equal(api.state.transaction.payment_method, "upi");
+});
+
 test("retry after email repair reuses the delivery, then skips already sent emails", async () => {
   const api = setup({ emailFailure: true });
   const first = await api.verify();
@@ -118,7 +127,7 @@ test("delivery-status write failure does not hide an accepted email or download"
 });
 
 test("uncaptured or mismatched payments never receive a delivery", async () => {
-  for (const payment of [{ status: "authorized" }, { amount: 1 }, { order_id: "different_order" }]) {
+  for (const payment of [{ status: "authorized" }, { status: "failed", method: "upi" }, { amount: 1 }, { order_id: "different_order" }]) {
     const api = setup({ payment });
     const result = await api.verify();
     assert.equal(result.status, 409);

@@ -26,6 +26,37 @@ Create an account at `/account`, then in Supabase SQL Editor run:
 `update public.profiles set role = 'admin' where id = 'YOUR_AUTH_USER_UUID';`
 Sign in and open `/admin` to upload a cover and a private PDF, create the title, and publish it.
 
+## Razorpay UPI and QR checkout
+
+The Key ID is a Razorpay checkout key, not a separate UPI key. Keep its matching
+`RAZORPAY_KEY_SECRET` only in `server/.env`. Checkout uses the `keyId`, amount and
+currency returned with the server-created order. `NEXT_PUBLIC_RAZORPAY_KEY_ID`
+in `client/.env.local` should match the server Key ID; it is used only for the
+initial test-mode notice. Restart the API and frontend after changing keys.
+
+For INR purchases, buyers can choose **UPI / QR code** or **Card / Netbanking**.
+Razorpay determines which enabled methods are available for the account/device:
+
+- **Test keys (`rzp_test_...`)**: simulated transactions only. The UPI configuration
+  is not restricted to live-only QR/intent flows. If Checkout offers a UPI ID test
+  field, use `success@razorpay` or `failure@razorpay`; otherwise use a test card or
+  simulated netbanking. Do not scan a test QR expecting a real UPI payment.
+- **Live keys (`rzp_live_...`)**: after account/website approval and UPI enablement,
+  Checkout requests UPI app intent and QR flows. Supported mobile devices show
+  UPI apps; desktop Checkout displays the scannable QR. The site does not create
+  an unrelated static QR or expose the Key Secret.
+- Card/netbanking and other account-enabled alternatives remain available.
+  Non-INR orders are not forced into UPI.
+
+Downloads and purchase email still require server-side signature, amount, order
+and captured-payment verification. Selecting UPI or scanning a QR is not proof
+of payment. Real UPI Intent/QR verification requires a live-mode payment and is
+not covered by mocked tests or a successful API credential check.
+
+References: [Razorpay testing instructions](https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/integration-steps/#2-test-integration),
+[UPI Intent and desktop QR](https://razorpay.com/docs/payments/payment-methods/upi/upi-intent/),
+[payment method configuration](https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/understand-configuration/).
+
 ## Purchase email from Gmail
 
 Purchase emails now use Gmail SMTP, not Resend. The sender is configured as
