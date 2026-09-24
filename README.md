@@ -26,6 +26,46 @@ Create an account at `/account`, then in Supabase SQL Editor run:
 `update public.profiles set role = 'admin' where id = 'YOUR_AUTH_USER_UUID';`
 Sign in and open `/admin` to upload a cover and a private PDF, create the title, and publish it.
 
+## Purchase email from Gmail
+
+Purchase emails now use Gmail SMTP, not Resend. The sender is configured as
+`maniksohane@gmail.com`; no custom sending domain is required. Use Node.js 20 or
+newer (this project is tested locally on Node.js 24).
+
+1. Enable Google 2-Step Verification for the sending Gmail account.
+2. Create an App Password at https://myaccount.google.com/apppasswords.
+3. Set these values in the private `server/.env` file:
+
+   ```dotenv
+   SMTP_USER=maniksohane@gmail.com
+   SMTP_APP_PASSWORD=YOUR_GMAIL_APP_PASSWORD
+   EMAIL_FROM="Manikya Publishing <maniksohane@gmail.com>"
+   ```
+
+4. From `server`, run `npm.cmd run email:check`. This checks Gmail authentication
+   without sending any email. Restart the API after changing `.env`.
+
+Never use your normal Gmail password, paste App Passwords into chat, commit them,
+or put SMTP settings into `client/.env.local`. Spaces in Google's displayed App
+Password are ignored. A previously configured `RESEND_API_KEY` is no longer used.
+The `EMAIL_FROM` address must match `SMTP_USER`. Optional
+`OWNER_NOTIFICATION_EMAIL` sends a BCC; leave it blank to disable.
+
+The email contains a private download link and a payment receipt. Configure
+`PUBLIC_API_URL` with your deployed HTTPS API origin before selling to visitors:
+an email link pointing at `localhost` only works on the computer running the API.
+Gmail has sending limits and may restrict automated mail; SMTP acceptance does
+not guarantee inbox delivery, so check spam and bounce notices.
+
+Email failure never changes a confirmed payment to a failure. The buyer retains
+the download and can retry email delivery from the same open checkout without a
+new payment. This retry proof is held in page memory, not persisted across a full
+reload. Existing failed purchases are not automatically resent by configuring
+Gmail, and there is no background email retry queue.
+
+Run `npm.cmd test` in `server` for mocked email, payment-delivery, and checkout
+retry tests. Tests do not contact Gmail, charge payments, or change Supabase data.
+
 ## Automatic GitHub sync (Windows)
 
 Saved source changes are automatically committed and pushed to `main` in

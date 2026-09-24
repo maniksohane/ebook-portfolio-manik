@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createRazorpayOrder } from "../lib/api";
+import { checkoutAction, verifyPaymentDetails } from "../lib/paymentVerification.mjs";
 
 const RAZORPAY_SCRIPT =
   "https://checkout.razorpay.com/v1/checkout.js";
@@ -34,10 +35,39 @@ export default function RazorpayCheckout({ ebook }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [download, setDownload] = useState(null);
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailMessage, setEmailMessage] = useState("");
+  const [messageType, setMessageType] = useState("error");
+  const [paymentDetails, setPaymentDetails] = useState(null);
+  const paymentRef = useRef(null);
+  const verificationInFlight = useRef(false);
+  const checkoutInProgress = useRef(false);
+  const action = checkoutAction({ paymentDetails, download, emailSent });
+
+  async function confirmExistingPayment(details) {
+    if (verificationInFlight.current) return;
+    verificationInFlight.current = true;
+    setBusy(true);
+    setMessageType("info");
+    setMessage("Confirming your purchase and checking email delivery...");
+    try {
+      const data = await verifyPaymentDetails(details);
+      setDownload(data.download);
+      setEmailSent(data.emailSent === true);
+      setEmailMessage(data.emailMessage || "");
+      setMessageType("success");
+      setMessage(data.message || "Payment successful. Your ebook is ready to download.");
+    } catch {
+      setMessageType("warning");
+      setMessage("We could not finish checking your purchase. Retry the confirmation below; do not pay again. If this continues, contact support.");
+    } finally {
+      verificationInFlight.current = false;
+      setBusy(false);
+    }
+  }
 
   function openBuyerForm() {
-    setMessage("");
-    setDownload(null);
+    if (!paymentRef.current && !download) setMessage("");
     setShowBuyerForm(true);
   }
 
@@ -45,12 +75,16 @@ export default function RazorpayCheckout({ ebook }) {
     if (busy) return;
 
     setShowBuyerForm(false);
-    setMessage("");
   }
 
   async function continueToPayment(event) {
     event.preventDefault();
-
+    if (busy || checkoutInProgress.current || action === "done") return;
+    if (paymentRef.current) {
+      if (action !== "done") await confirmExistingPayment(paymentRef.current);
+      return;
+    }
+    setMessageType("error");
     setMessage("");
 
     const trimmedFirstName = firstName.trim();
@@ -87,6 +121,7 @@ export default function RazorpayCheckout({ ebook }) {
     }
 
     setBusy(true);
+    checkoutInProgress.current = true;
 
     try {
       const loaded = await loadRazorpayScript();
@@ -167,78 +202,24 @@ export default function RazorpayCheckout({ ebook }) {
         },
 
         handler: async function (paymentResponse) {
-          try {
-            setMessage(
-              "Payment received. Verifying payment..."
-            );
-
-            const API =
-              process.env.NEXT_PUBLIC_API_URL ||
-              "http://localhost:5000";
-
-            const verificationResponse =
-              await fetch(
-                `${API}/api/payment/verify-payment`,
-                {
-                  method: "POST",
-
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-
-                  body: JSON.stringify({
-                    ebookId: ebook.id,
-
-                    firstName:
-                      trimmedFirstName,
-
-                    lastName:
-                      trimmedLastName,
-
-                    razorpayPaymentId:
-                      paymentResponse.razorpay_payment_id,
-
-                    razorpayOrderId:
-                      paymentResponse.razorpay_order_id,
-
-                    razorpaySignature:
-                      paymentResponse.razorpay_signature,
-                  }),
-                }
-              );
-
-            const data =
-              await verificationResponse
-                .json()
-                .catch(() => ({}));
-
-            if (!verificationResponse.ok) {
-              throw new Error(
-                data?.message ||
-                  data?.error ||
-                  "Payment verification failed."
-              );
-            }
-
-            setMessage(
-              data?.message ||
-                "Payment successful. Your e-book has been sent to your email."
-            );
-            setDownload(data?.download || null);
-          } catch (error) {
-            setMessage(
-              error?.message ||
-                "Payment was completed, but verification could not be completed."
-            );
-          } finally {
-            setBusy(false);
-          }
+          const details = {
+            razorpayPaymentId: paymentResponse.razorpay_payment_id,
+            razorpayOrderId: paymentResponse.razorpay_order_id,
+            razorpaySignature: paymentResponse.razorpay_signature,
+          };
+          paymentRef.current = details;
+          setPaymentDetails(details);
+          checkoutInProgress.current = false;
+          await confirmExistingPayment(details);
         },
 
         modal: {
           ondismiss: function () {
-            setBusy(false);
-            setMessage("");
+            checkoutInProgress.current = false;
+            if (!paymentRef.current) {
+              setBusy(false);
+              setMessage("");
+            }
           },
         },
 
@@ -253,8 +234,9 @@ export default function RazorpayCheckout({ ebook }) {
       razorpay.on(
         "payment.failed",
         function () {
+          if (paymentRef.current) return;
           setBusy(false);
-
+          setMessageType("error");
           setMessage(
             "Payment failed. Please try again."
           );
@@ -263,6 +245,7 @@ export default function RazorpayCheckout({ ebook }) {
 
       razorpay.open();
     } catch (error) {
+      checkoutInProgress.current = false;
       setBusy(false);
 
       setMessage(
@@ -279,12 +262,12 @@ export default function RazorpayCheckout({ ebook }) {
         onClick={openBuyerForm}
         className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-white/90"
       >
-        Buy Now
+        {paymentDetails || download ? "View Purchase" : "Buy Now"}
       </button>
 
       {showBuyerForm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#111214] shadow-2xl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm">
+          <div role="dialog" aria-modal="true" aria-labelledby={`checkout-title-${ebook.id}`} className="relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-[#111214] shadow-2xl">
             <button
               type="button"
               onClick={closeBuyerForm}
@@ -301,17 +284,17 @@ export default function RazorpayCheckout({ ebook }) {
                   Secure Checkout
                 </p>
 
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">
-                  Complete Your Purchase
+                <h2 id={`checkout-title-${ebook.id}`} className="mt-2 text-2xl font-semibold tracking-tight text-white">
+                  {download ? "Payment Complete" : "Complete Your Purchase"}
                 </h2>
 
                 <p className="mt-2 text-sm leading-6 text-white/50">
-                  Enter your details before continuing to
-                  secure payment.
+                  {download ? "Your ebook is ready. No further payment is required." : "Enter your details before continuing to secure payment."}
                 </p>
               </div>
 
               <form onSubmit={continueToPayment}>
+                <fieldset disabled={busy || Boolean(paymentDetails || download)} className="min-w-0">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label
@@ -396,6 +379,8 @@ export default function RazorpayCheckout({ ebook }) {
                   </p>
                 </div>
 
+                </fieldset>
+
                 <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -418,8 +403,14 @@ export default function RazorpayCheckout({ ebook }) {
                 </div>
 
                 {message && (
-                  <p className="mt-4 rounded-xl border border-red-400/20 bg-red-400/5 px-4 py-3 text-sm leading-5 text-red-300">
+                  <p role="status" aria-live="polite" className={`mt-4 rounded-xl border px-4 py-3 text-sm leading-5 ${messageType === "success" ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-300" : messageType === "info" ? "border-blue-400/20 bg-blue-400/5 text-blue-300" : messageType === "warning" ? "border-amber-400/20 bg-amber-400/5 text-amber-300" : "border-red-400/20 bg-red-400/5 text-red-300"}`}>
                     {message}
+                  </p>
+                )}
+
+                {download && emailMessage && (
+                  <p role="status" className={`mt-3 text-sm leading-5 ${emailSent ? "text-white/60" : "text-amber-300"}`}>
+                    {emailMessage}
                   </p>
                 )}
 
@@ -429,15 +420,17 @@ export default function RazorpayCheckout({ ebook }) {
                   </a>
                 )}
 
-                <button
+                {action !== "done" && <button
                   type="submit"
                   disabled={busy}
                   className="mt-6 w-full rounded-xl bg-white px-5 py-3.5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busy
-                    ? "Opening Payment..."
+                    ? (paymentDetails ? "Checking Purchase..." : "Opening Payment...")
+                    : action === "email" ? "Retry Email Delivery (No Charge)"
+                    : action === "verify" ? "Retry Payment Confirmation (No Charge)"
                     : "Continue to Payment"}
-                </button>
+                </button>}
 
                 <p className="mt-4 text-center text-xs text-white/30">
                   Secure payment powered by Razorpay

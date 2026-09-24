@@ -25,10 +25,50 @@ async function createRazorpayOrder(req, res, next) { try {
 } catch (error) { next(error); } }
 
 async function createDelivery(transaction, ebook) { const { data: existing, error: existingError } = await supabase.from("downloads").select("*").eq("transaction_id", transaction.id).maybeSingle(); if (existingError) throw existingError; const seconds = expirySeconds(), expiresAt = existing?.expires_at || new Date(Date.now() + seconds * 1000).toISOString(); const download = existing || (await supabase.from("downloads").insert({ transaction_id: transaction.id, ebook_id: ebook.id, user_id: transaction.user_id || null, expires_at: expiresAt, download_count: 0, download_limit: downloadLimit() }).select().single()).data; if (!download) throw new Error("Unable to create ebook delivery."); const baseUrl = process.env.PUBLIC_API_URL || "http://localhost:5000"; return { url: `${baseUrl}/api/payment/download/${download.id}`, expiresAt }; }
-async function sendDelivery(transaction, ebook) { const download = await createDelivery(transaction, ebook); if (transaction.delivery_email_sent_at) return { emailSent: true, download }; try { const sent = await sendPurchaseEmail({ transaction, ebook, download }); if (sent.skipped) return { emailSent: false, download }; await supabase.from("transactions").update({ delivery_email_sent_at: new Date().toISOString(), delivery_email_error: null }).eq("id", transaction.id); return { emailSent: true, download }; } catch (error) { console.error("Purchase email failed:", error.message); await supabase.from("transactions").update({ delivery_email_error: error.message }).eq("id", transaction.id); return { emailSent: false, download }; } }
+async function sendDelivery(transaction, ebook) {
+  const download = await createDelivery(transaction, ebook);
+  if (transaction.delivery_email_sent_at) return { emailSent: true, download };
+  let emailSent = false;
+  let deliveryError = null;
+  try {
+    await sendPurchaseEmail({ transaction, ebook, download });
+    emailSent = true;
+  } catch (error) {
+    deliveryError = error.message;
+    console.error("Purchase email failed:", error.code || "EMAIL_DELIVERY_FAILED");
+  }
+  try {
+    const { error } = await supabase.from("transactions").update(emailSent
+      ? { delivery_email_sent_at: new Date().toISOString(), delivery_email_error: null }
+      : { delivery_email_error: deliveryError }).eq("id", transaction.id);
+    if (error) console.error("Could not save email delivery status:", error.code || "DATABASE_ERROR");
+  } catch {
+    console.error("Could not save email delivery status.");
+  }
+  // An email or logging failure must not turn a captured payment into a failure.
+  return { emailSent, download };
+}
 async function captureOrder({ orderId, paymentId, signature }) { if (!signatureIsValid(orderId, paymentId, signature)) throw Object.assign(new Error("Invalid Razorpay payment signature."), { status: 400 }); const { data: transaction, error } = await supabase.from("transactions").select("*,ebooks(*)").eq("razorpay_order_id", orderId).single(); if (error || !transaction?.ebooks) throw Object.assign(new Error("Transaction not found."), { status: 404 }); const payment = await razorpay.payments.fetch(paymentId); if (payment.order_id !== orderId || Number(payment.amount) !== Number(transaction.amount_paise) || payment.status !== "captured") throw Object.assign(new Error("Payment is not captured yet."), { status: 409 }); if (transaction.razorpay_payment_id && transaction.razorpay_payment_id !== paymentId) throw Object.assign(new Error("Another payment is already recorded for this order."), { status: 409 }); const { data: captured, error: updateError } = await supabase.from("transactions").update({ razorpay_payment_id: paymentId, razorpay_signature: signature, payment_method: payment.method || null, payment_date: new Date(Number(payment.created_at) * 1000).toISOString(), status: "captured", webhook_received: transaction.webhook_received || false }).eq("id", transaction.id).select("*,ebooks(*)").single(); if (updateError) throw updateError; return { transaction: captured, ...(await sendDelivery(captured, captured.ebooks)) }; }
 
-async function verifyRazorpayPayment(req, res, next) { try { const { razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body || {}; if (!razorpayPaymentId || !razorpayOrderId || !razorpaySignature) return res.status(400).json({ success: false, message: "Incomplete Razorpay payment details." }); const result = await captureOrder({ orderId: razorpayOrderId, paymentId: razorpayPaymentId, signature: razorpaySignature }); res.json({ success: true, message: result.emailSent ? "Payment successful. Your ebook is ready and a backup link was emailed." : "Payment successful. Your ebook is ready. Download it now; email delivery will be enabled after the sender domain is verified.", transactionId: result.transaction.id, download: result.download }); } catch (error) { next(error); } }
+async function verifyRazorpayPayment(req, res, next) {
+  try {
+    const { razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body || {};
+    if (!razorpayPaymentId || !razorpayOrderId || !razorpaySignature) {
+      return res.status(400).json({ success: false, message: "Incomplete Razorpay payment details." });
+    }
+    const result = await captureOrder({ orderId: razorpayOrderId, paymentId: razorpayPaymentId, signature: razorpaySignature });
+    res.json({
+      success: true,
+      message: "Payment successful. Your ebook is ready to download.",
+      emailSent: result.emailSent,
+      emailMessage: result.emailSent
+        ? "A backup download link and payment receipt have been sent to your email. Please check your inbox and spam folder."
+        : "Your payment is complete, but the backup email could not be sent. Download your ebook here. You can retry email delivery without paying again.",
+      transactionId: result.transaction.id,
+      download: result.download,
+    });
+  } catch (error) { next(error); }
+}
 async function razorpayWebhook(req, res, next) { try { const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || ""); const signature = req.headers["x-razorpay-signature"]; if (!webhookIsValid(raw, signature)) return res.status(400).json({ success: false, message: "Invalid webhook signature." }); const event = JSON.parse(raw.toString("utf8")); const payment = event.payload?.payment?.entity; if (event.event === "payment.captured" && payment?.order_id && payment?.id) { const { data: transaction } = await supabase.from("transactions").select("*").eq("razorpay_order_id", payment.order_id).maybeSingle(); if (transaction) { await supabase.from("transactions").update({ razorpay_payment_id: payment.id, payment_method: payment.method || null, payment_date: new Date(Number(payment.created_at) * 1000).toISOString(), status: "captured", webhook_received: true }).eq("id", transaction.id); const { data: captured } = await supabase.from("transactions").select("*,ebooks(*)").eq("id", transaction.id).single(); if (captured?.ebooks && !captured.delivery_email_sent_at) await sendDelivery(captured, captured.ebooks); } } res.json({ success: true }); } catch (error) { next(error); } }
 async function downloadEbook(req, res, next) { try { const { data: download, error } = await supabase.from("downloads").select("*,ebooks(*)").eq("id", req.params.downloadId).single(); if (error || !download?.ebooks) return res.status(404).send("Download link not found."); if (new Date(download.expires_at) <= new Date()) return res.status(410).send("This download link has expired."); const { data: claimed, error: claimError } = await supabase.from("downloads").update({ download_count: Number(download.download_count) + 1 }).eq("id", download.id).lt("download_count", Number(download.download_limit)).select().maybeSingle(); if (claimError) throw claimError; if (!claimed) return res.status(403).send("Download limit reached."); const seconds = Math.max(60, Math.floor((new Date(download.expires_at).getTime() - Date.now()) / 1000)); const { data: signed, error: signedError } = await supabase.storage.from("ebook-files").createSignedUrl(download.ebooks.file_path, seconds); if (signedError || !signed?.signedUrl) throw signedError || new Error("Unable to prepare ebook."); res.setHeader("Cache-Control", "no-store"); res.redirect(302, signed.signedUrl); } catch (error) { next(error); } }
 async function getPurchases(req, res, next) { try { const { data, error } = await supabase.from("transactions").select("*,ebooks(*)").eq("user_id", req.user.id).eq("status", "captured").order("created_at", { ascending: false }); if (error) throw error; res.json({ success: true, purchases: data || [] }); } catch (error) { next(error); } }
