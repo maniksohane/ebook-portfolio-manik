@@ -30,6 +30,14 @@ const slugify = (value) =>
     .replace(/(^-|-$)/g, "");
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const MAX_COVER_SIZE = 10 * 1024 * 1024;
+
+const COVER_TYPES = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+};
 
 const ALLOWED_EBOOK_TYPES = [
   "application/pdf",
@@ -76,6 +84,32 @@ export default function AdminPage() {
       ...current,
       [key]: value,
     }));
+  }
+
+  function handleCoverFile(event) {
+    const selected = event.target.files?.[0] || null;
+    if (!selected) {
+      setCover(null);
+      return;
+    }
+
+    const extension = selected.name.split(".").pop().toLowerCase();
+    if (!COVER_TYPES[extension] || (selected.type && selected.type !== COVER_TYPES[extension])) {
+      event.target.value = "";
+      setCover(null);
+      setMessage("Choose a PNG, JPG, or WebP image for the cover, not the ebook PDF.");
+      return;
+    }
+
+    if (selected.size > MAX_COVER_SIZE) {
+      event.target.value = "";
+      setCover(null);
+      setMessage("The cover image must be 10 MB or smaller.");
+      return;
+    }
+
+    setMessage("");
+    setCover(selected);
   }
 
   function handleEbookFile(event) {
@@ -385,12 +419,13 @@ export default function AdminPage() {
               ref={coverInputRef}
               required
               type="file"
-              accept="image/*"
+              accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
               className="mt-2 block w-full text-sm"
-              onChange={(event) =>
-                setCover(event.target.files?.[0] || null)
-              }
+              onChange={handleCoverFile}
             />
+            <span className="mt-2 block text-xs text-white/30">
+              PNG, JPG or WebP · Maximum 10 MB. Upload the book PDF separately below.
+            </span>
           </label>
 
           <label className="text-sm text-white/60">
