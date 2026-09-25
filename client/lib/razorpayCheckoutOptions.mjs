@@ -6,12 +6,12 @@ export function getRazorpayMode(keyId) {
 }
 
 // Use the key/amount returned with the server-created order, never client prices.
-export function buildRazorpayCheckoutOptions({ order, title, buyer, preference = "upi" }) {
+export function buildRazorpayCheckoutOptions({ order, title, buyer, preference = "upi", availability }) {
   const mode = getRazorpayMode(order?.keyId);
   if (mode === "unknown" || !order?.orderId || !Number.isSafeInteger(order.amount) || order.amount <= 0 || !/^[A-Z]{3}$/.test(order.currency || "")) {
     throw new Error("Payment settings could not be loaded. Please try again or contact support.");
   }
-  const supportsUpi = order.currency === "INR";
+  const supportsUpi = order.currency === "INR" && availability?.keyId === order.keyId && availability?.upi === true;
   const preferUpi = supportsUpi && preference === "upi";
   const options = {
     key: order.keyId,

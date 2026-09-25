@@ -34,19 +34,33 @@ currency returned with the server-created order. `NEXT_PUBLIC_RAZORPAY_KEY_ID`
 in `client/.env.local` should match the server Key ID; it is used only for the
 initial test-mode notice. Restart the API and frontend after changing keys.
 
-For INR purchases, buyers can choose **UPI / QR code** or **Card / Netbanking**.
-Razorpay determines which enabled methods are available for the account/device:
+For INR purchases, the buyer form checks `GET /api/payment/methods` before
+offering **UPI / QR code**. This public endpoint uses Razorpay's Methods API with
+Key ID-only authentication, returns only mode/key/UPI availability, and caches
+successful lookups for 60 seconds per key. UPI stays disabled while availability
+is unknown or the account does not support it. Buyers can always continue to
+**Available methods** and choose from Razorpay's own options. Restart the backend
+after installing this change so the new route is available.
 
-- **Test keys (`rzp_test_...`)**: simulated transactions only. The UPI configuration
-  is not restricted to live-only QR/intent flows. If Checkout offers a UPI ID test
-  field, use `success@razorpay` or `failure@razorpay`; otherwise use a test card or
-  simulated netbanking. Do not scan a test QR expecting a real UPI payment.
+Razorpay determines the final available methods for the account and device:
+
+- **Test keys (`rzp_test_...`)**: simulated transactions only. A key may return
+  `upi: false` alongside `upi_intent: true`; the intent flag does not make UPI
+  app/QR payments usable in test mode. For such keys, use a test card or simulated
+  netbanking. Only offer sandbox UPI if the Methods API explicitly enables it.
+  Do not scan a test QR expecting a real UPI payment.
 - **Live keys (`rzp_live_...`)**: after account/website approval and UPI enablement,
   Checkout requests UPI app intent and QR flows. Supported mobile devices show
   UPI apps; desktop Checkout displays the scannable QR. The site does not create
   an unrelated static QR or expose the Key Secret.
 - Card/netbanking and other account-enabled alternatives remain available.
   Non-INR orders are not forced into UPI.
+
+If UPI is missing in live mode, check UPI enablement and account/website approval
+in Razorpay Dashboard, or ask Razorpay support to enable it. A checkout display
+configuration cannot activate a disabled merchant payment method. UPI Collect
+(manual UPI ID entry) has also been deprecated for most merchants; use supported
+Intent/QR flows instead. Availability checks never create orders or payments.
 
 Downloads and purchase email still require server-side signature, amount, order
 and captured-payment verification. Selecting UPI or scanning a QR is not proof

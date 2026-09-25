@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRazorpayOrder } from "../lib/api";
 import { checkoutAction, verifyPaymentDetails } from "../lib/paymentVerification.mjs";
 import { buildRazorpayCheckoutOptions, getRazorpayMode } from "../lib/razorpayCheckoutOptions.mjs";
+import { fetchPaymentMethods } from "../lib/paymentMethods.mjs";
 
 const RAZORPAY_SCRIPT =
   "https://checkout.razorpay.com/v1/checkout.js";
@@ -32,9 +33,12 @@ export default function RazorpayCheckout({ ebook }) {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [paymentPreference, setPaymentPreference] = useState("upi");
+  const [paymentPreference, setPaymentPreference] = useState("other");
   const [paymentMode, setPaymentMode] = useState(() => getRazorpayMode(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID));
+  const [availability, setAvailability] = useState(null);
+  const [methodsStatus, setMethodsStatus] = useState("loading");
   const supportsUpi = (ebook.currency || "INR") === "INR";
+  const upiAvailable = supportsUpi && methodsStatus === "ready" && availability?.upi === true;
 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -47,6 +51,24 @@ export default function RazorpayCheckout({ ebook }) {
   const verificationInFlight = useRef(false);
   const checkoutInProgress = useRef(false);
   const action = checkoutAction({ paymentDetails, download, emailSent });
+
+  useEffect(() => {
+    if (!showBuyerForm || paymentDetails || download) return;
+    let active = true;
+    const controller = new AbortController();
+    setMethodsStatus("loading");
+    setAvailability(null);
+    setPaymentPreference("other");
+    fetchPaymentMethods({ signal: controller.signal }).then((result) => {
+      if (!active) return;
+      setAvailability(result);
+      setPaymentMode(result.mode);
+      setMethodsStatus("ready");
+    }).catch(() => {
+      if (active) setMethodsStatus("unavailable");
+    });
+    return () => { active = false; controller.abort(); };
+  }, [showBuyerForm, paymentDetails, download]);
 
   async function confirmExistingPayment(details) {
     if (verificationInFlight.current) return;
@@ -156,6 +178,7 @@ export default function RazorpayCheckout({ ebook }) {
           title: ebook.title,
           buyer: { firstName: trimmedFirstName, lastName: trimmedLastName, email: trimmedEmail, phone: trimmedPhone },
           preference: paymentPreference,
+          availability,
         }),
 
         handler: async function (paymentResponse) {
@@ -338,25 +361,28 @@ export default function RazorpayCheckout({ ebook }) {
                   <fieldset disabled={busy} aria-describedby={`payment-help-${ebook.id}`} className="mt-5 min-w-0">
                     <legend className="mb-2 text-sm font-medium text-white/80">Payment method</legend>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${paymentPreference === "upi" ? "border-blue-400/60 bg-blue-400/10" : "border-white/10 bg-white/[0.03]"}`}>
-                        <input type="radio" name={`payment-method-${ebook.id}`} value="upi" checked={paymentPreference === "upi"} onChange={() => setPaymentPreference("upi")} className="mt-1 accent-blue-500" />
+                      <label className={`flex items-start gap-3 rounded-xl border p-3 ${upiAvailable ? "cursor-pointer" : "cursor-not-allowed opacity-50"} ${paymentPreference === "upi" ? "border-blue-400/60 bg-blue-400/10" : "border-white/10 bg-white/[0.03]"}`}>
+                        <input type="radio" name={`payment-method-${ebook.id}`} value="upi" disabled={!upiAvailable} checked={upiAvailable && paymentPreference === "upi"} onChange={() => setPaymentPreference("upi")} className="mt-1 accent-blue-500" />
                         <span>
                           <span className="block text-sm font-medium text-white">{paymentMode === "test" ? "UPI (test)" : "UPI / QR code"}</span>
-                          <span className="mt-1 block text-xs leading-5 text-white/50">{paymentMode === "test" ? "Simulated UPI payment" : "UPI apps or scan in Razorpay"}</span>
+                          <span className="mt-1 block text-xs leading-5 text-white/50">{methodsStatus === "loading" ? "Checking availability..." : !upiAvailable ? "Currently unavailable" : paymentMode === "test" ? "Simulated UPI payment" : "UPI apps or scan in Razorpay"}</span>
                         </span>
                       </label>
                       <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${paymentPreference === "other" ? "border-blue-400/60 bg-blue-400/10" : "border-white/10 bg-white/[0.03]"}`}>
                         <input type="radio" name={`payment-method-${ebook.id}`} value="other" checked={paymentPreference === "other"} onChange={() => setPaymentPreference("other")} className="mt-1 accent-blue-500" />
                         <span>
-                          <span className="block text-sm font-medium text-white">Card / Netbanking</span>
-                          <span className="mt-1 block text-xs leading-5 text-white/50">Other available methods</span>
+                          <span className="block text-sm font-medium text-white">Available methods</span>
+                          <span className="mt-1 block text-xs leading-5 text-white/50">Choose inside Razorpay</span>
                         </span>
                       </label>
                     </div>
-                    <p id={`payment-help-${ebook.id}`} className="mt-2 text-xs leading-5 text-white/50">
-                      {paymentMode === "test"
-                        ? "Test mode: no money is charged. Real QR scanning and UPI app payments require live mode. Use success@razorpay or failure@razorpay if Razorpay offers a test UPI ID field; otherwise use a test card or netbanking."
-                        : "Razorpay shows supported UPI apps on mobile and a QR code on desktop. Availability depends on the device and enabled account methods."}
+                    <p id={`payment-help-${ebook.id}`} role="status" className="mt-2 text-xs leading-5 text-white/50">
+                      {methodsStatus === "loading" ? "Checking which payment methods Razorpay supports for this account. You can also continue to see the available options there."
+                        : methodsStatus !== "ready" ? "We could not confirm UPI availability. Continue to Razorpay to choose from its available payment options."
+                        : !upiAvailable && paymentMode === "test" ? "Razorpay has not enabled UPI for this test key. Use a test card or netbanking to complete a simulated purchase. Real UPI app and QR payments require an activated live account."
+                        : !upiAvailable ? "UPI is currently unavailable for this Razorpay account. Choose another method inside Razorpay."
+                        : paymentMode === "test" ? "Test mode: no money is charged. Use only the test payment options shown in Razorpay. Real UPI app and QR payments require live mode."
+                        : "Razorpay shows supported UPI apps on mobile and a QR code on desktop. Availability also depends on the device and checkout eligibility."}
                     </p>
                   </fieldset>
                 )}

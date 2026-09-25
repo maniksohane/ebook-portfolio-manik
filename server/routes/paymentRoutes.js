@@ -1,4 +1,5 @@
 const express = require("express");
+const { paymentMethods } = require("../controllers/paymentMethodsController");
 
 const {
   createRazorpayOrder,
@@ -12,6 +13,8 @@ const {
 } = require("../middleware/auth");
 
 const router = express.Router();
+
+router.get("/methods", paymentMethods);
 
 router.post(
   "/create-order",

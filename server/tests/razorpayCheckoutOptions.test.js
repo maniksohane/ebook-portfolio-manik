@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 const order = { keyId: "rzp_test_example", orderId: "order_example", amount: 49900, currency: "INR" };
 const buyer = { firstName: "Test", lastName: "Buyer", email: "buyer@example.test", phone: "+919000000000" };
-const args = { order, buyer, title: "Test ebook" };
+const args = { order, buyer, title: "Test ebook", availability: { keyId: order.keyId, mode: "test", upi: true } };
 const helpers = import("../../client/lib/razorpayCheckoutOptions.mjs");
 
 test("test UPI does not restrict Checkout to unsupported QR or intent flows", async () => {
@@ -17,7 +17,7 @@ test("test UPI does not restrict Checkout to unsupported QR or intent flows", as
 
 test("live UPI enables QR and app intent without inventing a payment QR", async () => {
   const { buildRazorpayCheckoutOptions } = await helpers;
-  const options = buildRazorpayCheckoutOptions({ ...args, order: { ...order, keyId: "rzp_live_example" } });
+  const options = buildRazorpayCheckoutOptions({ ...args, order: { ...order, keyId: "rzp_live_example" }, availability: { keyId: "rzp_live_example", mode: "live", upi: true } });
   assert.deepEqual(options.config.display.blocks.upi.instruments, [{ method: "upi", flows: ["qr", "intent"] }]);
   assert.match(options.config.display.blocks.upi.name, /QR/);
 });
@@ -47,6 +47,16 @@ test("non-INR orders do not force UPI", async () => {
   const options = buildRazorpayCheckoutOptions({ ...args, order: { ...order, currency: "USD" } });
   assert.equal(options.config, undefined);
   assert.equal(options.prefill.method, undefined);
+});
+
+test("disabled, unknown or mismatched UPI availability never forces a UPI block", async () => {
+  const { buildRazorpayCheckoutOptions } = await helpers;
+  for (const availability of [undefined, null, { keyId: order.keyId, upi: false }, { keyId: "rzp_test_other", upi: true }]) {
+    const options = buildRazorpayCheckoutOptions({ ...args, availability });
+    assert.equal(options.config, undefined);
+    assert.equal(options.prefill.method, undefined);
+    assert.equal(options.order_id, order.orderId);
+  }
 });
 
 test("missing or malformed server order prevents checkout", async () => {
