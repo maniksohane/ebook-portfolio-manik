@@ -17,7 +17,10 @@ function setup(options = {}) {
     transaction: { id: "tx_test", ebook_id: "book_test", status: "created", razorpay_order_id: "order_test", amount_paise: 49900, currency: "INR", customer_email: "buyer@example.test", ebooks: { id: "book_test", title: "Test book", file_path: "book.pdf" } },
     downloads: [], emails: 0, emailFailure: options.emailFailure,
   };
-  const db = { from(table) {
+  const db = { storage: { from(bucket) {
+    assert.equal(bucket, "ebook-files");
+    return { async createSignedUrl() { return options.fileMissing ? { data: null, error: {} } : { data: { signedUrl: "https://storage.example.test/file" }, error: null }; } };
+  } }, from(table) {
     let action = "select", values;
     const conditions = [];
     const query = {
@@ -54,8 +57,9 @@ function setup(options = {}) {
     console: { error() {} },
     require(name) {
       if (name === "crypto") return crypto;
+      if (name === "../services/publicApiOrigin") return require(name);
       if (name === "../config/supabase") return db;
-      if (name === "../services/razorpayService") return { payments: { fetch: async () => ({ order_id: "order_test", amount: 49900, status: "captured", method: "card", created_at: 1700000000, ...options.payment }) } };
+      if (name === "../services/razorpayService") return { payments: { fetch: async () => ({ id: "pay_test", order_id: "order_test", amount: 49900, currency: "INR", status: "captured", method: "card", created_at: 1700000000, ...options.payment }) } };
       if (name === "../services/emailService") return { sendPurchaseEmail: async () => {
         state.emails++;
         if (state.emailFailure) throw Object.assign(new Error("Gmail authentication failed."), { code: "EMAIL_AUTH_FAILED" });
@@ -82,7 +86,11 @@ test("capture reports email acceptance independently from payment success", asyn
   assert.match(result.body.download.url, /download/);
   assert.equal(api.state.transaction.status, "captured");
   assert.ok(api.state.transaction.delivery_email_sent_at);
-  assert.doesNotMatch(result.body.message, /domain|verified/);
+  assert.equal(result.body.paymentVerified, true);
+  assert.equal(result.body.paymentStatus, "captured");
+  assert.equal(result.body.emailAddress, "buyer@example.test");
+  assert.match(result.body.message, /verified/);
+  assert.doesNotMatch(result.body.message, /domain/);
 });
 
 test("email rejection preserves the paid download and records the failure", async () => {
@@ -127,7 +135,7 @@ test("delivery-status write failure does not hide an accepted email or download"
 });
 
 test("uncaptured or mismatched payments never receive a delivery", async () => {
-  for (const payment of [{ status: "authorized" }, { status: "failed", method: "upi" }, { amount: 1 }, { order_id: "different_order" }]) {
+  for (const payment of [{ status: "authorized" }, { status: "failed", method: "upi" }, { amount: 1 }, { currency: "USD" }, { id: "pay_wrong" }, { order_id: "different_order" }]) {
     const api = setup({ payment });
     const result = await api.verify();
     assert.equal(result.status, 409);
@@ -140,5 +148,34 @@ test("incomplete or invalid payment proof does not send an email", async () => {
   const api = setup();
   assert.equal((await api.verify({})).status, 400);
   assert.equal((await api.verify({ ...proof, razorpaySignature: "invalid" })).status, 400);
+  assert.equal((await api.verify({ ...proof, razorpaySignature: "é".repeat(64) })).status, 400);
+  assert.equal((await api.verify({ ...proof, razorpaySignature: {} })).status, 400);
   assert.equal(api.state.emails, 0);
+});
+
+test("a refunded purchase is never reactivated by replaying its old confirmation", async () => {
+  const api = setup();
+  api.state.transaction.status = "refunded";
+  assert.equal((await api.verify()).status, 409);
+  assert.equal(api.state.transaction.status, "refunded");
+  assert.equal(api.state.emails, 0);
+});
+
+test("a missing file after capture never claims the ebook is ready or emails a broken link", async () => {
+  const api = setup({ fileMissing: true });
+  const result = await api.verify();
+  assert.equal(result.status, 503);
+  assert.equal(api.state.transaction.status, "captured");
+  assert.equal(api.state.emails, 0);
+});
+
+test("expired or exhausted delivery links are not advertised as ready or silently renewed", async () => {
+  for (const overrides of [{ expires_at: "2000-01-01T00:00:00Z" }, { download_count: 3, download_limit: 3 }]) {
+    const api = setup();
+    api.state.downloads.push({ id: "expired_test", transaction_id: "tx_test", expires_at: new Date(Date.now() + 60000).toISOString(), download_count: 0, download_limit: 3, ...overrides });
+    const result = await api.verify();
+    assert.equal(result.status, 410);
+    assert.equal(api.state.downloads.length, 1);
+    assert.equal(api.state.emails, 0);
+  }
 });

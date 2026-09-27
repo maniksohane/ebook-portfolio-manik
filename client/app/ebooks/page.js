@@ -6,7 +6,7 @@ export default function Page() {
     <main className="min-h-screen bg-black text-white">
       <Navbar />
       <div className="mx-auto max-w-7xl px-5 pb-16 pt-28 sm:px-6 sm:pt-32">
-        <EbookShowcase />
+        <EbookShowcase showAll />
       </div>
     </main>
   );

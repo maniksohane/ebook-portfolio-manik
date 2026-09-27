@@ -2,28 +2,37 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createRazorpayOrder } from "../lib/api";
+import { checkStoreService } from "../lib/apiTransport.mjs";
 import { checkoutAction, verifyPaymentDetails } from "../lib/paymentVerification.mjs";
 import { buildRazorpayCheckoutOptions, getRazorpayMode } from "../lib/razorpayCheckoutOptions.mjs";
 import { fetchPaymentMethods } from "../lib/paymentMethods.mjs";
+import { purchaseConfirmation } from "../lib/purchaseConfirmation.mjs";
+import { CircleCheck, Download, MailCheck, MailWarning } from "lucide-react";
 
 const RAZORPAY_SCRIPT =
   "https://checkout.razorpay.com/v1/checkout.js";
+let scriptLoading;
 
 function loadRazorpayScript() {
-  return new Promise((resolve) => {
-    if (window.Razorpay) {
-      resolve(true);
-      return;
-    }
-
+  if (window.Razorpay) return Promise.resolve(true);
+  if (scriptLoading) return scriptLoading;
+  scriptLoading = new Promise((resolve) => {
     const script = document.createElement("script");
-
+    const finish = (loaded) => {
+      clearTimeout(timer);
+      script.onload = null;
+      script.onerror = null;
+      if (!loaded) script.remove();
+      resolve(loaded);
+    };
+    const timer = setTimeout(() => finish(false), 15000);
     script.src = RAZORPAY_SCRIPT;
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-
+    script.async = true;
+    script.onload = () => finish(Boolean(window.Razorpay));
+    script.onerror = () => finish(false);
     document.body.appendChild(script);
-  });
+  }).finally(() => { scriptLoading = null; });
+  return scriptLoading;
 }
 
 export default function RazorpayCheckout({ ebook }) {
@@ -37,6 +46,8 @@ export default function RazorpayCheckout({ ebook }) {
   const [paymentMode, setPaymentMode] = useState(() => getRazorpayMode(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID));
   const [availability, setAvailability] = useState(null);
   const [methodsStatus, setMethodsStatus] = useState("loading");
+  const [serviceStatus, setServiceStatus] = useState("loading");
+  const [serviceAttempt, setServiceAttempt] = useState(0);
   const supportsUpi = (ebook.currency || "INR") === "INR";
   const upiAvailable = supportsUpi && methodsStatus === "ready" && availability?.upi === true;
 
@@ -44,7 +55,7 @@ export default function RazorpayCheckout({ ebook }) {
   const [message, setMessage] = useState("");
   const [download, setDownload] = useState(null);
   const [emailSent, setEmailSent] = useState(false);
-  const [emailMessage, setEmailMessage] = useState("");
+  const [confirmation, setConfirmation] = useState(null);
   const [messageType, setMessageType] = useState("error");
   const [paymentDetails, setPaymentDetails] = useState(null);
   const paymentRef = useRef(null);
@@ -56,19 +67,29 @@ export default function RazorpayCheckout({ ebook }) {
     if (!showBuyerForm || paymentDetails || download) return;
     let active = true;
     const controller = new AbortController();
+    setServiceStatus("loading");
     setMethodsStatus("loading");
     setAvailability(null);
     setPaymentPreference("other");
-    fetchPaymentMethods({ signal: controller.signal }).then((result) => {
+    checkStoreService({ signal: controller.signal }).then(async () => {
       if (!active) return;
-      setAvailability(result);
-      setPaymentMode(result.mode);
-      setMethodsStatus("ready");
+      setServiceStatus("ready");
+      try {
+        const result = await fetchPaymentMethods({ signal: controller.signal });
+        if (!active) return;
+        setAvailability(result);
+        setPaymentMode(result.mode);
+        setMethodsStatus("ready");
+      } catch {
+        if (active) setMethodsStatus("unavailable");
+      }
     }).catch(() => {
-      if (active) setMethodsStatus("unavailable");
+      if (!active) return;
+      setServiceStatus("unavailable");
+      setMethodsStatus("unavailable");
     });
     return () => { active = false; controller.abort(); };
-  }, [showBuyerForm, paymentDetails, download]);
+  }, [showBuyerForm, paymentDetails, download, serviceAttempt]);
 
   async function confirmExistingPayment(details) {
     if (verificationInFlight.current) return;
@@ -80,12 +101,12 @@ export default function RazorpayCheckout({ ebook }) {
       const data = await verifyPaymentDetails(details);
       setDownload(data.download);
       setEmailSent(data.emailSent === true);
-      setEmailMessage(data.emailMessage || "");
+      setConfirmation(purchaseConfirmation(data));
       setMessageType("success");
-      setMessage(data.message || "Payment successful. Your ebook is ready to download.");
-    } catch {
+      setMessage("");
+    } catch (error) {
       setMessageType("warning");
-      setMessage("We could not finish checking your purchase. Retry the confirmation below; do not pay again. If this continues, contact support.");
+      setMessage(error?.message?.includes("do not pay again") ? error.message : "We could not finish checking your purchase. Retry the confirmation below; do not pay again. If this continues, contact support.");
     } finally {
       verificationInFlight.current = false;
       setBusy(false);
@@ -110,6 +131,7 @@ export default function RazorpayCheckout({ ebook }) {
       if (action !== "done") await confirmExistingPayment(paymentRef.current);
       return;
     }
+    if (serviceStatus !== "ready") return;
     setMessageType("error");
     setMessage("");
 
@@ -263,16 +285,27 @@ export default function RazorpayCheckout({ ebook }) {
                 </p>
 
                 <h2 id={`checkout-title-${ebook.id}`} className="mt-2 text-2xl font-semibold tracking-tight text-white">
-                  {download ? "Payment Complete" : "Complete Your Purchase"}
+                  {confirmation ? "Payment Verified" : paymentDetails ? "Confirming Your Payment" : "Complete Your Purchase"}
                 </h2>
 
                 <p className="mt-2 text-sm leading-6 text-white/50">
-                  {download ? "Your ebook is ready. No further payment is required." : "Enter your details before continuing to secure payment."}
+                  {confirmation ? "Your ebook is ready. No further payment is required." : paymentDetails ? "We are checking your payment with Razorpay. Please do not pay again." : "Enter your details before continuing to secure payment."}
                 </p>
               </div>
 
               <form onSubmit={continueToPayment}>
-                <fieldset disabled={busy || Boolean(paymentDetails || download)} className="min-w-0">
+                {!paymentDetails && !download && serviceStatus !== "ready" && (
+                  <div role="status" className="mb-5 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200">
+                    {serviceStatus === "loading" ? "Connecting to secure checkout..." : <>
+                      <p>Checkout is temporarily unavailable. No payment has been started. Please try again later.</p>
+                      <button type="button" onClick={() => setServiceAttempt((value) => value + 1)} className="mt-3 font-semibold underline">Retry connection</button>
+                    </>}
+                  </div>
+                )}
+                {!paymentDetails && !download && serviceStatus === "ready" && paymentMode === "test" && (
+                  <p role="status" className="mb-5 rounded-xl border border-blue-400/20 bg-blue-400/5 p-4 text-sm text-blue-200">Test checkout: no real money is charged. This store is not yet accepting live payments.</p>
+                )}
+                <fieldset disabled={busy || Boolean(paymentDetails || download)} className={confirmation ? "hidden" : "min-w-0"}>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label
@@ -357,7 +390,7 @@ export default function RazorpayCheckout({ ebook }) {
                   </p>
                 </div>
 
-                {supportsUpi && !paymentDetails && !download && (
+                {supportsUpi && serviceStatus === "ready" && !paymentDetails && !download && (
                   <fieldset disabled={busy} aria-describedby={`payment-help-${ebook.id}`} className="mt-5 min-w-0">
                     <legend className="mb-2 text-sm font-medium text-white/80">Payment method</legend>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -416,21 +449,35 @@ export default function RazorpayCheckout({ ebook }) {
                   </p>
                 )}
 
-                {download && emailMessage && (
-                  <p role="status" className={`mt-3 text-sm leading-5 ${emailSent ? "text-white/60" : "text-amber-300"}`}>
-                    {emailMessage}
-                  </p>
+                {confirmation && (
+                  <div role="status" aria-live="polite" aria-atomic="true" className="mt-4 space-y-3">
+                    <div className="flex gap-3 rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-4">
+                      <CircleCheck className="mt-0.5 shrink-0 text-emerald-400" size={22} aria-hidden="true" />
+                      <div>
+                        <h3 className="font-semibold text-emerald-300">{confirmation.title}</h3>
+                        <p className="mt-1 text-sm leading-6 text-white/70">{confirmation.description}</p>
+                      </div>
+                    </div>
+                    <div className={`flex gap-3 rounded-xl border p-4 ${confirmation.emailSent ? "border-blue-400/20 bg-blue-400/5" : "border-amber-400/25 bg-amber-400/5"}`}>
+                      {confirmation.emailSent ? <MailCheck className="mt-0.5 shrink-0 text-blue-400" size={22} aria-hidden="true" /> : <MailWarning className="mt-0.5 shrink-0 text-amber-400" size={22} aria-hidden="true" />}
+                      <div className="min-w-0">
+                        <h3 className={`font-semibold ${confirmation.emailSent ? "text-blue-300" : "text-amber-300"}`}>{confirmation.emailTitle}</h3>
+                        <p className="mt-1 break-words text-sm leading-6 text-white/70">{confirmation.emailDescription}</p>
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {download?.url && (
-                  <a href={download.url} className="mt-4 block rounded-xl bg-blue-500 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-blue-400">
-                    Download Your Ebook Now
+                  <a href={download.url} target="_blank" rel="noopener noreferrer" className="mt-4 flex items-center justify-center gap-2 rounded-xl bg-blue-500 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-blue-400">
+                    <Download size={18} aria-hidden="true" /> Download Your Ebook
                   </a>
                 )}
+                {download?.expiresAt && <p className="mt-2 text-center text-xs leading-5 text-white/40">Download link expires {new Date(download.expiresAt).toLocaleString()}. Save a copy to your device.</p>}
 
                 {action !== "done" && <button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || (action === "pay" && serviceStatus !== "ready")}
                   className="mt-6 w-full rounded-xl bg-white px-5 py-3.5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busy

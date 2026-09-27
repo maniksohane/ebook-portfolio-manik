@@ -6,9 +6,13 @@ import { supabase } from "../../lib/supabase";
 import {
   createEbook,
   createUploadUrl,
+  deleteEbook,
   getAdminEbooks,
   updateEbook,
+  uploadCover,
+  importCover,
 } from "../../lib/api";
+import { COVER_ACCEPT, COVER_HELP, coverFileError } from "../../lib/coverFiles.mjs";
 
 const blank = {
   title: "",
@@ -30,14 +34,6 @@ const slugify = (value) =>
     .replace(/(^-|-$)/g, "");
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
-const MAX_COVER_SIZE = 10 * 1024 * 1024;
-
-const COVER_TYPES = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  webp: "image/webp",
-};
 
 const ALLOWED_EBOOK_TYPES = [
   "application/pdf",
@@ -50,11 +46,18 @@ export default function AdminPage() {
   const [book, setBook] = useState(blank);
   const [editBook, setEditBook] = useState(null);
   const [cover, setCover] = useState(null);
+  const [coverStoragePath, setCoverStoragePath] = useState("");
+  const [editCover, setEditCover] = useState(null);
+  const [editCoverPath, setEditCoverPath] = useState("");
   const [file, setFile] = useState(null);
   const [items, setItems] = useState([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
+  const [rowBusy, setRowBusy] = useState(null);
+  const [listMessage, setListMessage] = useState(null);
+  const rowActionRef = useRef(false);
+  const actionsDisabled = busy || editBusy || Boolean(rowBusy);
 
   const coverInputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -86,30 +89,20 @@ export default function AdminPage() {
     }));
   }
 
-  function handleCoverFile(event) {
+  function handleCoverFile(event, editing = false) {
     const selected = event.target.files?.[0] || null;
-    if (!selected) {
-      setCover(null);
-      return;
-    }
-
-    const extension = selected.name.split(".").pop().toLowerCase();
-    if (!COVER_TYPES[extension] || (selected.type && selected.type !== COVER_TYPES[extension])) {
+    const setSelected = editing ? setEditCover : setCover;
+    const error = coverFileError(selected);
+    if (error) {
       event.target.value = "";
-      setCover(null);
-      setMessage("Choose a PNG, JPG, or WebP image for the cover, not the ebook PDF.");
+      setSelected(null);
+      setMessage(error);
+      if (editing) setListMessage({ type: "error", text: error });
       return;
     }
-
-    if (selected.size > MAX_COVER_SIZE) {
-      event.target.value = "";
-      setCover(null);
-      setMessage("The cover image must be 10 MB or smaller.");
-      return;
-    }
-
     setMessage("");
-    setCover(selected);
+    setSelected(selected);
+    if (editing) setListMessage(null);
   }
 
   function handleEbookFile(event) {
@@ -170,9 +163,14 @@ export default function AdminPage() {
 
   async function submit(event) {
     event.preventDefault();
+    if (busy || editBusy || rowActionRef.current) return;
 
-    if (!cover || !file) {
-      setMessage("Choose both a cover image and a PDF or EPUB file.");
+    if ((!cover && !coverStoragePath.trim()) || !file) {
+      setMessage("Choose a cover file (or its Supabase path) and a separate PDF or EPUB ebook.");
+      return;
+    }
+    if (cover && coverStoragePath.trim()) {
+      setMessage("Choose either a cover file or its Supabase path, not both.");
       return;
     }
 
@@ -203,17 +201,13 @@ export default function AdminPage() {
 
       const timestamp = Date.now();
 
-      const coverExtension =
-        cover.name.split(".").pop()?.toLowerCase() || "jpg";
-
       const ebookExtension =
         file.name.split(".").pop()?.toLowerCase() || "pdf";
 
-      const coverPath = await upload(
-        "ebook-covers",
-        cover,
-        `covers/${slug}-${timestamp}.${coverExtension}`
-      );
+      setMessage("Preparing the cover image...");
+      const preparedCover = cover ? await uploadCover(cover) : await importCover(coverStoragePath.trim());
+      const coverPath = preparedCover.cover_path;
+      setMessage("Uploading the ebook...");
 
       const filePath = await upload(
         "ebook-files",
@@ -237,6 +231,7 @@ export default function AdminPage() {
 
       setBook(blank);
       setCover(null);
+      setCoverStoragePath("");
       setFile(null);
 
       if (coverInputRef.current) {
@@ -258,7 +253,11 @@ export default function AdminPage() {
   }
 
   function startEdit(item) {
+    if (actionsDisabled || rowActionRef.current) return;
     setMessage("");
+    setListMessage(null);
+    setEditCover(null);
+    setEditCoverPath("");
 
     setEditBook({
       id: item.id,
@@ -276,12 +275,19 @@ export default function AdminPage() {
 
   function cancelEdit() {
     setEditBook(null);
+    setEditCover(null);
+    setEditCoverPath("");
   }
 
   async function saveEdit(event) {
     event.preventDefault();
+    if (editBusy || busy || rowActionRef.current) return;
 
     if (!editBook) {
+      return;
+    }
+    if (editCover && editCoverPath.trim()) {
+      setListMessage({ type: "error", text: "Choose either a replacement cover file or its Supabase path, not both." });
       return;
     }
 
@@ -310,9 +316,12 @@ export default function AdminPage() {
 
     setEditBusy(true);
     setMessage("");
+    setListMessage(null);
 
     try {
+      const preparedCover = editCover ? await uploadCover(editCover) : editCoverPath.trim() ? await importCover(editCoverPath.trim()) : null;
       await updateEbook(editBook.id, {
+        ...(preparedCover ? { cover_path: preparedCover.cover_path } : {}),
         title: editBook.title.trim(),
         slug: editBook.slug.trim(),
         description: editBook.description.trim(),
@@ -325,10 +334,14 @@ export default function AdminPage() {
       });
 
       setEditBook(null);
+      setEditCover(null);
+      setEditCoverPath("");
       setMessage("E-book updated successfully.");
+      setListMessage({ type: "success", text: "E-book updated successfully." });
 
       await load();
     } catch (error) {
+      setListMessage({ type: "error", text: error.message || "Unable to update e-book." });
       setMessage(error.message || "Unable to update e-book.");
     } finally {
       setEditBusy(false);
@@ -336,6 +349,10 @@ export default function AdminPage() {
   }
 
   async function toggle(item) {
+    if (actionsDisabled || rowActionRef.current) return;
+    rowActionRef.current = true;
+    setRowBusy({ id: item.id, action: "publish" });
+    setListMessage(null);
     try {
       await updateEbook(item.id, {
         is_published: !item.is_published,
@@ -350,6 +367,35 @@ export default function AdminPage() {
       await load();
     } catch (error) {
       setMessage(error.message);
+    } finally {
+      rowActionRef.current = false;
+      setRowBusy(null);
+    }
+  }
+
+  async function removeBook(item) {
+    if (actionsDisabled || rowActionRef.current) return;
+    const confirmed = window.confirm(
+      `Delete "${item.title}"?\n\nThis permanently removes its listing from the admin page and public store. Uploaded files will remain in storage.\n\nBooks with transaction or download history cannot be deleted; unpublish those instead.`
+    );
+    if (!confirmed) return;
+
+    rowActionRef.current = true;
+    setRowBusy({ id: item.id, action: "delete" });
+    setListMessage(null);
+    try {
+      const response = await deleteEbook(item.id);
+      if (!response.success || response.deletedId !== item.id) {
+        throw new Error("Deletion could not be confirmed. Refresh the list before trying again.");
+      }
+      setItems((current) => current.filter((entry) => entry.id !== item.id));
+      setEditBook((current) => current?.id === item.id ? null : current);
+      setListMessage({ type: "success", text: response.message });
+    } catch (error) {
+      setListMessage({ type: "error", text: error.message || "Unable to delete the e-book." });
+    } finally {
+      rowActionRef.current = false;
+      setRowBusy(null);
     }
   }
 
@@ -414,17 +460,17 @@ export default function AdminPage() {
           />
 
           <label className="text-sm text-white/60">
-            Cover image
+            Cover file
             <input
               ref={coverInputRef}
-              required
+              required={!coverStoragePath.trim()}
               type="file"
-              accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+              accept={COVER_ACCEPT}
               className="mt-2 block w-full text-sm"
-              onChange={handleCoverFile}
+              onChange={(event) => handleCoverFile(event)}
             />
             <span className="mt-2 block text-xs text-white/30">
-              PNG, JPG or WebP · Maximum 10 MB. Upload the book PDF separately below.
+              {COVER_HELP}
             </span>
           </label>
 
@@ -442,6 +488,12 @@ export default function AdminPage() {
             <span className="mt-2 block text-xs text-white/30">
               PDF or EPUB · Maximum 50 MB
             </span>
+          </label>
+
+          <label className="text-sm text-white/60 md:col-span-2">
+            Or use a cover already uploaded to Supabase (optional)
+            <input type="text" value={coverStoragePath} onChange={(event) => setCoverStoragePath(event.target.value)} placeholder="covers/my-cover.pdf" className="mt-2 block w-full rounded-xl border border-white/10 bg-white/5 p-3 text-white" />
+            <span className="mt-2 block text-xs text-white/40">Enter the file path inside ebook-covers, not its URL. Choose a file above OR enter this path. The original file is retained.</span>
           </label>
 
           <label className="flex items-center gap-2 text-sm">
@@ -468,7 +520,7 @@ export default function AdminPage() {
 
           <button
             type="submit"
-            disabled={busy}
+            disabled={actionsDisabled}
             className="rounded-xl bg-white p-3 font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60 md:col-span-2"
           >
             {busy ? "Uploading and publishing..." : "Create e-book"}
@@ -498,6 +550,12 @@ export default function AdminPage() {
             </span>
           </div>
 
+          {listMessage && (
+            <p role={listMessage.type === "error" ? "alert" : "status"} className={`mb-4 rounded-xl border p-3 text-sm ${listMessage.type === "error" ? "border-red-400/20 bg-red-400/5 text-red-300" : "border-emerald-400/20 bg-emerald-400/5 text-emerald-300"}`}>
+              {listMessage.text}
+            </p>
+          )}
+
           <div className="space-y-4">
             {items.map((item) => (
               <article
@@ -516,8 +574,7 @@ export default function AdminPage() {
                         </h3>
 
                         <p className="mt-1 text-xs text-white/40">
-                          Update metadata only. The existing cover and
-                          ebook file will remain unchanged.
+                          Update details or replace the cover. The purchased ebook file stays unchanged.
                         </p>
                       </div>
 
@@ -611,6 +668,17 @@ export default function AdminPage() {
                         className="min-h-32 rounded-xl border border-white/10 bg-white/5 p-3 text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/50 md:col-span-2"
                       />
 
+                      <label className="text-sm text-white/60 md:col-span-2">
+                        Replace cover (optional)
+                        <input type="file" accept={COVER_ACCEPT} disabled={editBusy} onChange={(event) => handleCoverFile(event, true)} className="mt-2 block w-full text-sm" />
+                        <span className="mt-2 block text-xs text-white/40">{COVER_HELP} Leave empty to keep the existing cover.</span>
+                      </label>
+                      <label className="text-sm text-white/60 md:col-span-2">
+                        Or use a cover from Supabase storage
+                        <input type="text" value={editCoverPath} disabled={editBusy} onChange={(event) => setEditCoverPath(event.target.value)} placeholder="covers/my-cover.pdf" className="mt-2 block w-full rounded-xl border border-white/10 bg-white/5 p-3 text-white" />
+                        <span className="mt-2 block text-xs text-white/40">Path inside ebook-covers, not a URL. Choose one source only; the original is not deleted.</span>
+                      </label>
+
                       <label className="flex items-center gap-2 text-sm text-white/70">
                         <input
                           type="checkbox"
@@ -652,7 +720,7 @@ export default function AdminPage() {
 
                       <button
                         type="submit"
-                        disabled={editBusy}
+                        disabled={actionsDisabled}
                         className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {editBusy ? "Saving..." : "Save Changes"}
@@ -682,11 +750,12 @@ export default function AdminPage() {
                       )}
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => startEdit(item)}
-                        className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-300 transition hover:border-blue-400/50 hover:bg-blue-500/20"
+                        disabled={actionsDisabled}
+                        className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-300 transition hover:border-blue-400/50 hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Edit
                       </button>
@@ -694,9 +763,20 @@ export default function AdminPage() {
                       <button
                         type="button"
                         onClick={() => toggle(item)}
-                        className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40"
+                        disabled={actionsDisabled}
+                        className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {item.is_published ? "Unpublish" : "Publish"}
+                        {rowBusy?.id === item.id && rowBusy.action === "publish" ? "Updating..." : item.is_published ? "Unpublish" : "Publish"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => removeBook(item)}
+                        disabled={actionsDisabled}
+                        aria-label={`Delete ${item.title}`}
+                        className="rounded-lg border border-red-400/30 bg-red-400/5 px-3 py-2 text-sm text-red-300 transition hover:border-red-400/60 hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {rowBusy?.id === item.id && rowBusy.action === "delete" ? "Deleting..." : "Delete"}
                       </button>
                     </div>
                   </div>

@@ -26,6 +26,76 @@ Create an account at `/account`, then in Supabase SQL Editor run:
 `update public.profiles set role = 'admin' where id = 'YOUR_AUTH_USER_UUID';`
 Sign in and open `/admin` to upload a cover and a private PDF, create the title, and publish it.
 
+### Cover uploads and replacements
+
+The admin **Cover file** input accepts PDF, DOC, DOCX, PNG, JPG/JPEG and WebP
+(including the common `.jepg` extension typo). Covers have a 10 MB limit. The
+server validates the file contents and generates a PNG: PDF/Word covers use
+their **complete first page**, while images retain their aspect ratio. The
+catalogue displays the entire generated image without cropping. Arbitrary
+files such as ZIP archives, executables or HTML are not valid covers.
+
+For an existing book, choose **Edit → Replace cover → Save Changes**. You do
+not need to re-upload or change the purchased ebook. Alternatively, enter a
+path such as `covers/my-cover.pdf` in the Supabase cover field. This reads only
+the public `ebook-covers` bucket, converts the file and links the generated
+image to the book. Use either a file or a storage path, not both.
+
+Uploading a document directly in Supabase does **not** automatically associate
+it with a book. Use the admin form to link it. Deleting the linked image from
+storage removes the cover from the site until you replace it. Original files
+are never overwritten or deleted by conversion. Keep full paid ebooks in the
+private `ebook-files` bucket; only cover pages belong in `ebook-covers`.
+
+Runtime setup:
+
+- Use **Node.js 22.13+ or 24+**, then run `npm.cmd install` inside `server`.
+  PDF/image rendering dependencies are included in the lockfile.
+- **DOC/DOCX additionally require LibreOffice installed on the API host**.
+  On Windows, install LibreOffice Writer and optionally set
+  `LIBREOFFICE_PATH=C:/Program Files/LibreOffice/program/soffice.exe` in
+  `server/.env`. On a Linux API host, install `libreoffice-writer` and the fonts
+  used by the documents. The executable can also be on PATH. Restart the API
+  after setup. Without LibreOffice the form gives a setup error and does not
+  replace the existing cover; PDF and images still work.
+- For exact Word typography, supply the original fonts on the host or export
+  the cover to PDF first. Conversion uses a temporary profile with macros
+  disabled and a timeout. Only verified admins can invoke conversion. For
+  production, run the API/converter as an unprivileged, resource-limited process
+  and upload only trusted documents; headless conversion is not a sandbox.
+
+`POST /api/admin/covers?filename=cover.pdf` accepts an authenticated binary
+`application/octet-stream` body. `POST /api/admin/covers/import` accepts JSON
+`{"path":"covers/cover.pdf"}`. Both return `cover_path` and `coverImage` after
+saving a unique PNG. Save `cover_path` through the existing ebook create/update
+endpoint. Errors leave the current ebook record unchanged. Generated covers
+whose later ebook save fails may remain as unlinked files; no automatic storage
+deletion is performed. No database migration or public ebook-file access is
+required.
+
+Tests: `npm.cmd test` inside `server` checks complete first-page rendering,
+image formats, malformed files, size limits, missing Word runtime, storage
+path restrictions and admin authorization. Word success needs a real
+LibreOffice installation and is not established by the missing-runtime test.
+
+References: [PDF.js rendering example](https://github.com/mozilla/pdf.js/blob/master/examples/node/pdf2png/pdf2png.mjs),
+[LibreOffice conversion options](https://help.libreoffice.org/latest/en-GB/text/shared/guide/start_parameters.html),
+[Supabase storage uploads](https://supabase.com/docs/reference/javascript/storage-from-upload).
+
+### Delete an unwanted e-book
+
+In `/admin`, **Delete** appears beside Edit and Publish/Unpublish. Confirm the
+book title in the confirmation prompt to permanently remove the listing. The
+list and book count update after the server confirms deletion. Uploaded covers,
+PDFs, EPUBs and previews are intentionally retained in storage (files may be
+shared); deleting a listing does not erase these files or provide an Undo action.
+
+`DELETE /api/admin/ebooks/:id` requires an authenticated admin. Existing database
+foreign keys block deletion of any book with transaction or download history,
+including failed/pending/test orders. Use **Unpublish** for those books so buyers
+retain access. No transaction, download or storage object is deleted, and no
+schema migration is needed. Restart the backend after adding the new route.
+
 ## Razorpay UPI and QR checkout
 
 The Key ID is a Razorpay checkout key, not a separate UPI key. Keep its matching
@@ -74,7 +144,7 @@ References: [Razorpay testing instructions](https://razorpay.com/docs/payments/p
 ## Purchase email from Gmail
 
 Purchase emails now use Gmail SMTP, not Resend. The sender is configured as
-`maniksohane@gmail.com`; no custom sending domain is required. Use Node.js 20 or
+`maniksohane@gmail.com`; no custom sending domain is required. Use Node.js 22.13 or
 newer (this project is tested locally on Node.js 24).
 
 1. Enable Google 2-Step Verification for the sending Gmail account.
@@ -110,6 +180,53 @@ Gmail, and there is no background email retry queue.
 
 Run `npm.cmd test` in `server` for mocked email, payment-delivery, and checkout
 retry tests. Tests do not contact Gmail, charge payments, or change Supabase data.
+
+### Payment confirmation and download checks
+
+After server verification, checkout shows **Payment verified**, a **Download
+Your Ebook** button, and a separate **Email sent** notice containing the email
+address saved on the purchase. That notice describes the download link and
+receipt, not a PDF attachment. It appears only after SMTP accepted the buyer's
+email. SMTP acceptance does not prove inbox placement; the buyer should check
+inbox/spam. Failed email delivery keeps the paid download and no-charge email
+retry available. The purchase form is hidden after successful verification.
+
+The API verifies the HMAC signature, captured status, payment ID, stored order,
+amount and currency before delivery. The frontend requires explicit
+`paymentVerified: true` and `paymentStatus: "captured"`; a checkout callback alone
+cannot display success. A missing ebook file blocks new order creation. If a
+file goes missing after capture, confirmation requests help/retry without
+claiming the ebook is ready or asking for another payment. Expired/exhausted
+links are not silently renewed or advertised as ready.
+
+Downloads require a captured transaction for the same ebook, a valid expiry and
+remaining download allowance. The storage URL uses download disposition and a
+maximum five-minute lifetime. File-preparation failure does not consume a click;
+compare-and-set counter updates prevent concurrent clicks bypassing the limit.
+Refunded transactions cannot be reactivated through callback replay. Refund
+reconciliation and cross-process delivery idempotency still need additional
+production work; this is not a complete refund/order-management system.
+
+Before launch, configure a real `RAZORPAY_WEBHOOK_SECRET` and register your
+public HTTPS `/api/payment/webhook` endpoint in Razorpay. Webhooks with absent,
+placeholder or invalid secrets are rejected; signed events must match the
+stored purchase. Callback-based local tests do not prove webhook delivery.
+Set `PUBLIC_API_URL` to the deployed API URL: localhost email links are usable
+only on the machine running this project.
+
+Manual acceptance test (Razorpay test mode):
+
+1. Refresh `/ebooks`, choose **Buy Now**, and enter your own email address.
+2. Complete one simulated card/netbanking payment in Razorpay.
+3. Confirm **Payment verified**, **Email sent**, the correct email address and
+   a working ebook download. Check inbox/spam and the emailed link/receipt.
+4. Close/reopen the purchase dialog: it must not ask for another payment.
+5. Test a failed/cancelled payment separately: it must not release the ebook or
+   display a successful-purchase confirmation.
+
+References: [Razorpay verification and testing](https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/integration-steps/),
+[webhook validation](https://razorpay.com/docs/webhooks/validate-test/),
+[Nodemailer recipient acceptance](https://nodemailer.com/).
 
 ## Automatic GitHub sync (Windows)
 

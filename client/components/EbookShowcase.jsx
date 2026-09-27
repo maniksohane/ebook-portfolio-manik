@@ -5,20 +5,26 @@ import { ArrowUpRight, BookOpen } from "lucide-react";
 import { getEbooks } from "../lib/api";
 import EbookCard from "./EbookCard";
 
-export default function EbookShowcase() {
+export default function EbookShowcase({ showAll = false }) {
   const [ebooks, setEbooks] = useState([]);
+  const [status, setStatus] = useState("loading");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    getEbooks()
+    let active = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    setStatus("loading");
+    getEbooks({ signal: controller.signal })
       .then((response) => {
-        if (response.success) {
-          setEbooks(response.ebooks);
-        }
+        if (!active) return;
+        setEbooks(response.ebooks);
+        setStatus("ready");
       })
-      .catch((error) => {
-        console.error("Failed to load ebooks:", error);
-      });
-  }, []);
+      .catch(() => { if (active) setStatus("error"); })
+      .finally(() => clearTimeout(timer));
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [attempt]);
 
   return (
     <section className="w-full">
@@ -43,7 +49,7 @@ export default function EbookShowcase() {
             </p>
           </div>
 
-          <a
+          {!showAll && <a
             href="/ebooks"
             className="
               group
@@ -72,7 +78,7 @@ export default function EbookShowcase() {
               size={16}
               className="transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
             />
-          </a>
+          </a>}
         </div>
 
         {/* Publishing statement */}
@@ -103,9 +109,17 @@ export default function EbookShowcase() {
         </div>
 
         {/* Ebook cards */}
-        {ebooks.length > 0 ? (
+        {status === "loading" ? (
+          <p role="status" className="mt-8 rounded-3xl border border-white/10 p-10 text-center text-white/60">Loading ebooks...</p>
+        ) : status === "error" ? (
+          <div role="alert" className="mt-8 rounded-3xl border border-amber-400/20 p-10 text-center">
+            <p className="text-white/80">We couldn't load the ebooks right now.</p>
+            <p className="mt-2 text-sm text-white/50">Please check your connection and try again.</p>
+            <button type="button" onClick={() => setAttempt((value) => value + 1)} className="mt-5 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black">Try again</button>
+          </div>
+        ) : ebooks.length > 0 ? (
           <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {ebooks.slice(0, 3).map((ebook) => (
+            {(showAll ? ebooks : ebooks.slice(0, 3)).map((ebook) => (
               <EbookCard key={ebook.id} ebook={ebook} />
             ))}
           </div>

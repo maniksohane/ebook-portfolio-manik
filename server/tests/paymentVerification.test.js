@@ -20,7 +20,7 @@ test("retry posts the existing payment proof only to verification, never create-
     assert.ok(url.endsWith("/api/payment/verify-payment"));
     assert.equal(options.method, "POST");
     assert.deepEqual(JSON.parse(options.body), details);
-    return { ok: true, json: async () => ({ success: true, emailSent: false, download: { url: "/book" } }) };
+    return { ok: true, json: async () => ({ success: true, paymentVerified: true, paymentStatus: "captured", emailSent: false, download: { url: "/book" } }) };
   } });
   assert.equal(called, 1);
   assert.equal(result.emailSent, false);
@@ -28,7 +28,7 @@ test("retry posts the existing payment proof only to verification, never create-
 
 test("pending capture and malformed success responses stay recoverable", async () => {
   const { verifyPaymentDetails } = await helper();
-  for (const response of [{ ok: false, json: async () => ({ message: "pending" }) }, { ok: true, json: async () => ({ success: true }) }]) {
+  for (const response of [{ ok: false, json: async () => ({ message: "pending" }) }, { ok: true, json: async () => ({ success: true }) }, { ok: true, json: async () => ({ success: true, download: { url: "/book" } }) }, { ok: true, json: async () => ({ success: true, paymentVerified: true, paymentStatus: "authorized", download: { url: "/book" } }) }]) {
     await assert.rejects(verifyPaymentDetails(details, { fetchImpl: async () => response }), /do not pay again/);
   }
 });

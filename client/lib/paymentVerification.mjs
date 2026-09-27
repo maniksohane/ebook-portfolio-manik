@@ -1,3 +1,5 @@
+import { resolveApiOrigin } from "./apiTransport.mjs";
+
 export function checkoutAction({ paymentDetails, download, emailSent }) {
   if (download?.url) return !paymentDetails || emailSent ? "done" : "email";
   return paymentDetails ? "verify" : "pay";
@@ -12,7 +14,7 @@ export async function verifyPaymentDetails(details, { fetchImpl = fetch, timeout
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const api = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    const api = resolveApiOrigin();
     const response = await fetchImpl(`${api}/api/payment/verify-payment`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -20,7 +22,9 @@ export async function verifyPaymentDetails(details, { fetchImpl = fetch, timeout
       signal: controller.signal,
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.success || !data.download?.url) {
+    if (response.status === 410) throw new Error("This purchase's download link has expired or reached its limit. Contact the seller for help; do not pay again.");
+    if (response.status === 503) throw new Error("We could not prepare the ebook right now. Retry confirmation or contact the seller; do not pay again.");
+    if (!response.ok || !data.success || data.paymentVerified !== true || data.paymentStatus !== "captured" || !data.download?.url) {
       throw new Error("Payment confirmation could not be completed. Please retry confirmation; do not pay again.");
     }
     return data;

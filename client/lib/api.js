@@ -1,4 +1,5 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+import { requestJson } from "./apiTransport.mjs";
+import { loadPublishedEbooks } from "./catalogue.mjs";
 
 async function request(path, options = {}) {
   const { supabase } = await import("./supabase");
@@ -6,7 +7,7 @@ async function request(path, options = {}) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  const response = await fetch(`${API}${path}`, {
+  return requestJson(path, {
     ...options,
     headers: {
       ...(options.headers || {}),
@@ -14,28 +15,17 @@ async function request(path, options = {}) {
         ? { Authorization: `Bearer ${session.access_token}` }
         : {}),
     },
-    cache: "no-store",
   });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(
-      data?.error ||
-        data?.message ||
-        `Request failed with status ${response.status}`
-    );
-  }
-
-  return data;
 }
 
-export async function getEbooks() {
-  return request("/api/ebooks");
+export async function getEbooks(options) {
+  const { supabase } = await import("./supabase");
+  return loadPublishedEbooks(supabase, options);
 }
 
 export async function createRazorpayOrder(payload) {
-  return request("/api/payment/create-order", {
+  // Guest checkout does not require an authentication session.
+  return requestJson("/api/payment/create-order", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -79,5 +69,27 @@ export async function createUploadUrl(data) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify(data),
+  });
+}
+
+export async function deleteEbook(id) {
+  return request(`/api/admin/ebooks/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function uploadCover(file) {
+  return request(`/api/admin/covers?filename=${encodeURIComponent(file.name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: file,
+  });
+}
+
+export async function importCover(path) {
+  return request("/api/admin/covers/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
   });
 }
