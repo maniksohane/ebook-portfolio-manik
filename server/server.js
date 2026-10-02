@@ -12,6 +12,7 @@ const ebookRoutes = require("./routes/ebookRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const { razorpayWebhook } = require("./controllers/paymentController");
+const { createCorsOriginCheck } = require("./services/clientOrigins");
 const { getPublicApiOrigin } = require("./services/publicApiOrigin");
 
 const app = express();
@@ -24,7 +25,7 @@ app.use(helmet());
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: createCorsOriginCheck(process.env.CLIENT_URL),
     credentials: true,
   })
 );
