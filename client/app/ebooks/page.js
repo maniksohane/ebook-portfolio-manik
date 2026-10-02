@@ -1,4 +1,5 @@
 import Navbar from "../../components/Navbar";
+import EbookRoadmap from "../../components/EbookRoadmap";
 import EbookShowcase from "../../components/EbookShowcase";
 
 export const metadata = {
@@ -11,7 +12,8 @@ export default function Page() {
   return (
     <main className="min-h-screen bg-black text-white">
       <Navbar />
-      <div className="mx-auto max-w-7xl px-5 pb-20 pt-28 sm:px-6 sm:pt-32">
+      <EbookRoadmap />
+      <div className="mx-auto max-w-7xl px-5 py-20 sm:px-6 sm:py-24">
         <EbookShowcase showAll />
       </div>
       <footer className="border-t border-white/[0.07] px-5 py-8 text-center text-sm text-white/35 sm:px-6">
