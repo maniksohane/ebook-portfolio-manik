@@ -8,9 +8,9 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "Manikya Sohane | Microsoft Dynamics CRM Consultant",
+  title: "Manikya Publishing | Technical E-Books",
   description:
-    "Microsoft Dynamics CRM, Dynamics 365 CE, Power Platform and Azure integration consultant.",
+    "Practical Microsoft Dynamics 365 CE, Dataverse and Power Platform e-books by Manikya Sohane.",
 };
 
 export default function RootLayout({ children }) {

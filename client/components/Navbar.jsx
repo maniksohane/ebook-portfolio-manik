@@ -3,17 +3,15 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BookOpen, Menu, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 
 const navigation = [
-  { label: "About", href: "/#about" },
-  { label: "Expertise", href: "/#expertise" },
-  { label: "Experience", href: "/#experience" },
-  { label: "Projects", href: "/#projects" },
-  { label: "Contact", href: "/#contact" },
+  { label: "About the Author", href: "/about" },
 ];
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     const closeOnEscape = (event) => {
@@ -39,7 +37,8 @@ export default function Navbar() {
             <span className="h-2 w-2 bg-[#ffb900] sm:h-2.5 sm:w-2.5" />
           </span>
 
-          MANIKYA SOHANE
+          <span className="sm:hidden">MANIKYA</span>
+          <span className="hidden sm:inline">MANIKYA PUBLISHING</span>
         </Link>
 
         <div className="hidden items-center gap-8 md:flex">
@@ -47,7 +46,10 @@ export default function Navbar() {
             <Link
               key={item.href}
               href={item.href}
-              className="text-sm text-white/55 transition hover:text-white"
+              aria-current={pathname === item.href ? "page" : undefined}
+              className={`text-sm transition hover:text-white ${
+                pathname === item.href ? "text-white" : "text-white/55"
+              }`}
             >
               {item.label}
             </Link>
@@ -55,7 +57,12 @@ export default function Navbar() {
 
           <Link
             href="/ebooks"
-            className="flex items-center gap-2 rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold transition hover:border-blue-500 hover:bg-blue-500 hover:text-white"
+            aria-current={pathname === "/ebooks" ? "page" : undefined}
+            className={`flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition hover:border-blue-500 hover:bg-blue-500 hover:text-white ${
+              pathname === "/ebooks"
+                ? "border-blue-500 bg-blue-500 text-white"
+                : "border-white/15"
+            }`}
           >
             <BookOpen size={16} />
             E-Books
@@ -66,7 +73,12 @@ export default function Navbar() {
           <Link
             href="/ebooks"
             onClick={() => setMenuOpen(false)}
-            className="flex h-10 items-center gap-2 rounded-full border border-blue-500/45 bg-blue-500/10 px-3 text-xs font-bold text-blue-300 transition active:scale-[0.98] min-[400px]:px-4"
+            aria-current={pathname === "/ebooks" ? "page" : undefined}
+            className={`flex h-10 items-center gap-2 rounded-full border px-3 text-xs font-bold transition active:scale-[0.98] min-[400px]:px-4 ${
+              pathname === "/ebooks"
+                ? "border-blue-500 bg-blue-500 text-white"
+                : "border-blue-500/45 bg-blue-500/10 text-blue-300"
+            }`}
             aria-label="Browse E-Books"
           >
             <BookOpen size={16} aria-hidden="true" />
@@ -100,6 +112,7 @@ export default function Navbar() {
               key={item.href}
               href={item.href}
               onClick={() => setMenuOpen(false)}
+              aria-current={pathname === item.href ? "page" : undefined}
               className="group flex min-h-12 items-center justify-between border-b border-white/[0.07] py-3 text-sm font-semibold text-white/75 transition last:border-b-0 hover:text-white"
             >
               <span>{item.label}</span>

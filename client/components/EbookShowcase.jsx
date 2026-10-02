@@ -33,13 +33,13 @@ export default function EbookShowcase({ showAll = false }) {
         <div className="flex flex-col justify-between gap-8 md:flex-row md:items-end">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-blue-500">
-              07 · PUBLISHING
+              E-BOOK STORE
             </p>
 
             <h2 className="mt-7 max-w-4xl text-4xl font-black leading-[1.02] tracking-[-0.045em] md:text-6xl">
-              Knowledge worth{" "}
+              Practical knowledge,{" "}
               <span className="bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500 bg-clip-text text-transparent">
-                sharing.
+                written to be used.
               </span>
             </h2>
 
@@ -91,7 +91,7 @@ export default function EbookShowcase({ showAll = false }) {
 
               <div>
                 <p className="font-bold text-white">
-                  From enterprise projects to practical learning.
+                  Technical guidance grounded in real-world experience.
                 </p>
 
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-white/40">
@@ -135,7 +135,7 @@ export default function EbookShowcase({ showAll = false }) {
             </p>
 
             <p className="mt-2 text-sm text-white/35">
-              Check the E-Books section for future releases.
+              New releases will appear here as soon as they are published.
             </p>
           </div>
         )}

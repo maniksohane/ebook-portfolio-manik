@@ -403,10 +403,10 @@ export default function AdminPage() {
     <main className="min-h-screen bg-[#020304] px-6 py-20 text-white">
       <div className="mx-auto max-w-5xl">
         <Link
-          href="/"
+          href="/ebooks"
           className="text-sm text-blue-400 transition hover:text-blue-300"
         >
-          ← Back to portfolio
+          ← Back to e-books
         </Link>
 
         <h1 className="mt-6 text-4xl font-black">
