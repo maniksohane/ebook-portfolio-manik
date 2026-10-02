@@ -26,7 +26,7 @@ export default function EbookCard({ ebook }) {
 
   return (
     <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]">
-      <div className="shrink-0 border-b border-white/10 bg-[#101418]">
+      <div className="aspect-[3/4] w-full shrink-0 overflow-hidden border-b border-white/10 bg-[#101418]">
         {showCover ? (
           <img
             src={ebook.coverImage}
@@ -34,10 +34,10 @@ export default function EbookCard({ ebook }) {
             loading="lazy"
             decoding="async"
             onError={() => setFailedCover(ebook.coverImage)}
-            className="block h-auto w-full"
+            className="block h-full w-full object-cover object-center"
           />
         ) : (
-          <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-3 p-5 text-white/40">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-5 text-white/40">
             <BookOpen size={40} aria-hidden="true" />
             <p className="text-sm">Cover unavailable</p>
           </div>
