@@ -13,6 +13,7 @@ import {
   importCover,
 } from "../../lib/api";
 import { COVER_ACCEPT, COVER_HELP, coverFileError } from "../../lib/coverFiles.mjs";
+import { slugify } from "../../lib/slug.mjs";
 
 const blank = {
   title: "",
@@ -25,13 +26,6 @@ const blank = {
   is_published: false,
   is_featured: false,
 };
-
-const slugify = (value) =>
-  value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
@@ -193,7 +187,7 @@ export default function AdminPage() {
     setMessage("");
 
     try {
-      const slug = book.slug.trim() || slugify(book.title);
+      const slug = slugify(book.slug || book.title);
 
       if (!slug) {
         throw new Error("A valid title or slug is required.");
@@ -323,7 +317,7 @@ export default function AdminPage() {
       await updateEbook(editBook.id, {
         ...(preparedCover ? { cover_path: preparedCover.cover_path } : {}),
         title: editBook.title.trim(),
-        slug: editBook.slug.trim(),
+        slug: slugify(editBook.slug),
         description: editBook.description.trim(),
         author: editBook.author.trim() || "Manikya",
         price: Number(editBook.price),
@@ -445,7 +439,12 @@ export default function AdminPage() {
               className="rounded-xl border border-white/10 bg-white/5 p-3 text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/50"
               placeholder={label}
               value={book[key]}
-              onChange={(event) => change(key, event.target.value)}
+              onChange={(event) =>
+                change(
+                  key,
+                  key === "slug" ? slugify(event.target.value) : event.target.value
+                )
+              }
             />
           ))}
 
@@ -606,7 +605,7 @@ export default function AdminPage() {
                         placeholder="Slug"
                         value={editBook.slug}
                         onChange={(event) =>
-                          changeEdit("slug", event.target.value)
+                          changeEdit("slug", slugify(event.target.value))
                         }
                         className="rounded-xl border border-white/10 bg-white/5 p-3 text-white outline-none transition placeholder:text-white/30 focus:border-blue-500/50"
                       />
