@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ArrowRight, BookOpen, Code2, Lightbulb, UserRound } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, BookOpen, Code2, Lightbulb } from "lucide-react";
 import Navbar from "../../components/Navbar";
 
 export const metadata = {
@@ -36,12 +37,17 @@ export default function AboutPage() {
 
       <section className="px-5 pb-20 pt-32 sm:px-6 sm:pt-40">
         <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center lg:gap-20">
-          <div className="relative mx-auto flex aspect-square w-full max-w-md items-center justify-center overflow-hidden rounded-[2.25rem] border border-white/10 bg-[#0a0d10]">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(59,130,246,0.22),transparent_55%)]" />
-            <div className="relative flex h-36 w-36 items-center justify-center rounded-full border border-blue-400/25 bg-blue-500/10 text-blue-300">
-              <UserRound size={66} strokeWidth={1.4} aria-hidden="true" />
-            </div>
-            <p className="absolute bottom-8 text-xs font-bold uppercase tracking-[0.24em] text-white/35">
+          <div className="relative mx-auto aspect-[3/4] w-full max-w-md overflow-hidden rounded-[2.25rem] border border-white/10 bg-[#0a0d10] shadow-[0_30px_90px_rgba(0,0,0,0.35)]">
+            <Image
+              src="/manikya-sohane-author.png"
+              alt="Portrait of Manikya Sohane, author and Microsoft Dynamics 365 consultant"
+              fill
+              priority
+              sizes="(max-width: 1024px) 90vw, 420px"
+              className="object-cover object-center"
+            />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+            <p className="absolute inset-x-5 bottom-6 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-white/70 sm:bottom-8 sm:text-xs sm:tracking-[0.24em]">
               Author · Technologist · Educator
             </p>
           </div>
