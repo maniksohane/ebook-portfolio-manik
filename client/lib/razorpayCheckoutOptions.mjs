@@ -18,7 +18,7 @@ export function buildRazorpayCheckoutOptions({ order, title, buyer, preference =
     order_id: order.orderId,
     amount: order.amount,
     currency: order.currency,
-    name: "Manikya Publishing",
+    name: "Ebooks by Manik!",
     description: title,
     prefill: {
       name: `${buyer.firstName} ${buyer.lastName}`,

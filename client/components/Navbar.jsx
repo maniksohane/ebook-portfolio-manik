@@ -28,7 +28,7 @@ export default function Navbar() {
         <Link
           href="/"
           onClick={() => setMenuOpen(false)}
-          className="flex min-w-0 items-center gap-2.5 whitespace-nowrap text-xs font-black tracking-[0.12em] sm:gap-3 sm:text-sm sm:tracking-[0.16em]"
+          className="flex min-w-0 items-center gap-2.5 whitespace-nowrap text-[10px] font-black tracking-[0.08em] sm:gap-3 sm:text-sm sm:tracking-[0.16em]"
         >
           <span className="grid grid-cols-2 gap-[2px]">
             <span className="h-2 w-2 bg-[#f25022] sm:h-2.5 sm:w-2.5" />
@@ -37,8 +37,7 @@ export default function Navbar() {
             <span className="h-2 w-2 bg-[#ffb900] sm:h-2.5 sm:w-2.5" />
           </span>
 
-          <span className="sm:hidden">MANIKYA</span>
-          <span className="hidden sm:inline">MANIKYA PUBLISHING</span>
+          <span>EBOOKS BY MANIK!</span>
         </Link>
 
         <div className="hidden items-center gap-8 md:flex">

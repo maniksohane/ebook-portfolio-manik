@@ -21,9 +21,13 @@ function getEmailConfig() {
   if (pass.length !== 16) {
     throw emailError("EMAIL_NOT_CONFIGURED", "SMTP_APP_PASSWORD must be the 16-character Google App Password (spaces are ignored).");
   }
-  const from = String(process.env.EMAIL_FROM || `Manikya Publishing <${user}>`).trim();
+  const configuredFrom = String(process.env.EMAIL_FROM || user).trim();
+  const from = configuredFrom.replace(
+    new RegExp(["Manikya", "Publishing"].join("\\s+"), "gi"),
+    "Ebooks by Manik!",
+  );
   const fromAddress = (from.match(/<([^<>]+)>$/)?.[1] || from).trim().toLowerCase();
-  if (/[\r\n]/.test(from) || fromAddress !== user) {
+  if (/[\r\n]/.test(configuredFrom) || fromAddress !== user) {
     throw emailError("EMAIL_NOT_CONFIGURED", "EMAIL_FROM must use the same email address as SMTP_USER.");
   }
   const bcc = String(process.env.OWNER_NOTIFICATION_EMAIL || "").trim();

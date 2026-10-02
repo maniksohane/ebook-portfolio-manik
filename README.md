@@ -154,7 +154,7 @@ newer (this project is tested locally on Node.js 24).
    ```dotenv
    SMTP_USER=maniksohane@gmail.com
    SMTP_APP_PASSWORD=YOUR_GMAIL_APP_PASSWORD
-   EMAIL_FROM="Manikya Publishing <maniksohane@gmail.com>"
+   EMAIL_FROM="Ebooks by Manik! <maniksohane@gmail.com>"
    ```
 
 4. From `server`, run `npm.cmd run email:check`. This checks Gmail authentication

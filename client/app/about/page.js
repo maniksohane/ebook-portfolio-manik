@@ -4,7 +4,7 @@ import { ArrowRight, BookOpen, Code2, Lightbulb } from "lucide-react";
 import Navbar from "../../components/Navbar";
 
 export const metadata = {
-  title: "About the Author | Manikya Publishing",
+  title: "About the Author | Ebooks by Manik!",
   description:
     "Meet Manikya Sohane, author of practical Microsoft Dynamics 365 CE and Power Platform guides.",
 };
@@ -108,7 +108,7 @@ export default function AboutPage() {
       </section>
 
       <footer className="border-t border-white/[0.07] px-5 py-8 text-center text-sm text-white/35 sm:px-6">
-        © {new Date().getFullYear()} Manikya Publishing. All rights reserved.
+        © {new Date().getFullYear()} Ebooks by Manik! All rights reserved.
       </footer>
     </main>
   );

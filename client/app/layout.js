@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "Manikya Publishing | Technical E-Books",
+  title: "Ebooks by Manik! | Technical E-Books",
   description:
     "Practical Microsoft Dynamics 365 CE, Dataverse and Power Platform e-books by Manikya Sohane.",
 };

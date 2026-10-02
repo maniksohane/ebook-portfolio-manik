@@ -103,7 +103,7 @@ export default function EbookShowcase({ showAll = false }) {
             </div>
 
             <span className="hidden text-xs font-bold uppercase tracking-[0.18em] text-white/20 md:block">
-              MANIKYA · PUBLISHING
+              EBOOKS BY MANIK!
             </span>
           </div>
         </div>
