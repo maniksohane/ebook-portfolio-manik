@@ -12,21 +12,21 @@ export const metadata = {
 const authorFocus = [
   {
     icon: Lightbulb,
-    title: "Practical learning",
+    title: "A place to start",
     description:
-      "Clear explanations built around real implementation challenges, not abstract theory.",
+      "Begin with the basics, understand why they matter and know what to learn before taking the next step.",
   },
   {
     icon: Code2,
-    title: "Technical depth",
+    title: "A path that makes sense",
     description:
-      "Guidance covering Dynamics 365 CE, Dataverse, Power Platform, integrations and development.",
+      "Learn how the pieces connect without having to figure out the whole platform by yourself.",
   },
   {
     icon: BookOpen,
-    title: "Useful references",
+    title: "Learning you can use",
     description:
-      "Books designed to remain useful during projects, troubleshooting and interview preparation.",
+      "Use what you learn to solve real problems during projects, troubleshooting and everyday consulting work.",
   },
 ];
 
@@ -84,16 +84,27 @@ export default function AboutPage() {
 
       <section className="border-t border-white/[0.07] px-5 py-20 sm:px-6">
         <div className="mx-auto max-w-7xl">
-          <div className="max-w-2xl">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-blue-500">
-              Why I write
-            </p>
-            <h2 className="mt-5 text-3xl font-black tracking-[-0.035em] sm:text-5xl">
-              Knowledge becomes valuable when it can be applied.
-            </h2>
+          <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:items-start lg:gap-20">
+            <div className="max-w-2xl">
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-blue-500">
+                Why I write
+              </p>
+              <h2 className="mt-5 text-3xl font-black tracking-[-0.035em] sm:text-5xl">
+                The kind of guidance I needed when I started.
+              </h2>
+            </div>
+
+            <div className="space-y-5 text-base leading-7 text-white/60 sm:text-lg sm:leading-8">
+              <p>
+                When I first started learning Dynamics 365 and Power Platform, I remember feeling lost. I could find plenty of information, but I still did not know where to begin, how to navigate the platform, why certain things were designed the way they were, or what I needed to understand before moving to the next topic.
+              </p>
+              <p>
+                That experience is why I write these books. I have taken the questions I had, the mistakes I made, and all the little commas and full stops that slowed me down, and tried to turn them into a simple, connected learning path. My aim is to give you the kind of guidance I was looking for when I started.
+              </p>
+            </div>
           </div>
 
-          <div className="mt-10 grid gap-5 md:grid-cols-3">
+          <div className="mt-12 grid gap-5 md:grid-cols-3">
             {authorFocus.map(({ icon: Icon, title, description }) => (
               <article key={title} className="rounded-3xl border border-white/10 bg-white/[0.025] p-7">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
@@ -103,6 +114,12 @@ export default function AboutPage() {
                 <p className="mt-3 text-sm leading-6 text-white/45">{description}</p>
               </article>
             ))}
+          </div>
+
+          <div className="mt-8 rounded-3xl border border-blue-500/20 bg-blue-500/[0.07] px-7 py-7 sm:px-9">
+            <p className="max-w-5xl text-base leading-7 text-white/70 sm:text-lg sm:leading-8">
+              As a consultant, I see myself first as a problem solver. If these books make one difficult idea clearer, save you some time, or help you take your next step with confidence, they have done their job. I am still learning too, so your feedback, suggestions and appreciation are always welcome.
+            </p>
           </div>
         </div>
       </section>
